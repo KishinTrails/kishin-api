@@ -1,0 +1,28 @@
+[project]
+name = "kishin-api"
+version = "0.1.0"
+description = ""
+package-mode = false
+authors = [
+    {name = "Maxime Puys",email = "drakes00@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13,<4.0.0"
+dependencies = [
+    "fastapi (>=0.128.6,<0.129.0)",
+    "gpx (>=2026.1.0,<2027.0.0)",
+    "alpha-shapes (>=1.1.1,<2.0.0)",
+    "matplotlib (>=3.10.8,<4.0.0)",
+    "pyqt6 (>=6.10.2,<7.0.0)",
+]
+
+[dependency-groups]
+dev = [
+    "ward (>=0.68.0b0,<0.69.0)",
+    "ipython (>=9.10.0,<10.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
