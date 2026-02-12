@@ -51,35 +51,49 @@ points = [(float(p.lat), float(p.lon)) for p in f.trk[0].trkseg[0].trkpt]
 #
 # plt.show()
 
-from math import radians, cos, sin, asin, sqrt
+# from math import radians, cos, sin, asin, sqrt
+#
+#
+# def get_distance(p1, p2):
+#     lat1, lon1 = p1
+#     lat2, lon2 = p2
+#
+#     ##convert decimal degrees to radians
+#     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+#
+#     ##haversine formula
+#     dlon = lon2 - lon1
+#     dlat = lat2 - lat1
+#     a = sin(dlat / 2)**2 + cos(lat1) * cos(lat2) * sin(dlon / 2)**2
+#     c = 2 * asin(sqrt(a))
+#     # Radius of earth in kilometers. Use 3956 for miles
+#     r = 6371
+#     return c * r
+#
+#
+# filtered = [points[0]]
+#
+# i = 0
+# while i < (len(points) - 1):
+#     for j in range(i + 1, len(points)):
+#         dist = get_distance(points[i], points[j])
+#         if dist > 0.03:  # km
+#             filtered += [points[j]]
+#             break
+#     i = j
+#
+# print("\n".join([f"{{ lat: {a}, lng: {b}, name: '' }}," for a, b in filtered]))
 
+import h3
 
-def get_distance(p1, p2):
-    lat1, lon1 = p1
-    lat2, lon2 = p2
+resolution = 10
+h3_coords = set([])
 
-    ##convert decimal degrees to radians
-    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+for lat, lng in points:
+    h3_coords.add(h3.latlng_to_cell(lat, lng, resolution))
 
-    ##haversine formula
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat / 2)**2 + cos(lat1) * cos(lat2) * sin(dlon / 2)**2
-    c = 2 * asin(sqrt(a))
-    # Radius of earth in kilometers. Use 3956 for miles
-    r = 6371
-    return c * r
-
-
-filtered = [points[0]]
-
-i = 0
-while i < (len(points) - 1):
-    for j in range(i + 1, len(points)):
-        dist = get_distance(points[i], points[j])
-        if dist > 0.01:  # km
-            filtered += [points[j]]
-            break
-    i = j
-
-print("\n".join([f"{{ lat: {a}, lng: {b}, name: '' }}," for a, b in filtered]))
+print(f"Before: {len(h3_coords)}")
+h3_coords = h3.compact_cells(h3_coords)
+print(f"After: {len(h3_coords)}")
+for coord in h3_coords:
+    print(f"    '{coord}',")
