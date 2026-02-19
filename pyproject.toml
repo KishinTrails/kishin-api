@@ -15,6 +15,9 @@ dependencies = [
     "matplotlib (>=3.10.8,<4.0.0)",
     "pyqt6 (>=6.10.2,<7.0.0)",
     "h3 (>=4.4.2,<5.0.0)",
+    "requests (>=2.32.5,<3.0.0)",
+    "geopandas (>=1.1.2,<2.0.0)",
+    "uvicorn (>=0.41.0,<0.42.0)",
 ]
 
 [dependency-groups]
