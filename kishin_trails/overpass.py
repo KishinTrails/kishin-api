@@ -1,5 +1,5 @@
 """
-OSM/Overpass data fetcher + FastAPI server.
+OSM/Overpass data fetcher + FastAPI router.
 
 Fetches OpenStreetMap geographic features (natural landmarks, viewpoints,
 parks, forests, industrial and recreational areas) from the Overpass API,
@@ -20,12 +20,14 @@ from typing import Any, Optional
 
 import requests
 import geopandas as gpd
-import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import JSONResponse
 from pyproj import Geod
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import linemerge, polygonize, unary_union
+
+from kishin_trails.config import settings
+from kishin_trails.dependencies import get_current_user
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -41,7 +43,7 @@ logger = logging.getLogger("overpass")
 # Constants
 # ---------------------------------------------------------------------------
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URL = settings.OVERPASS_URL
 
 CACHE_DIR = Path("./cache")
 CACHE_DIR.mkdir(exist_ok=True)
@@ -505,18 +507,16 @@ def _row_to_feature(row: gpd.GeoDataFrame) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI application
+# Router setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(
-    title="Kishin Trails — OSM Elements API",
-    description="Serve OpenStreetMap area/point features pre-processed from Overpass.",
-    version="1.0.0",
+router = APIRouter(
+    prefix="/elements",
+    tags=["elements"],
+    dependencies=[Depends(get_current_user)],
 )
 
 # Populated on the first request and reused for the lifetime of the process.
-# Replace with a proper async cache or background refresh task if periodic
-# invalidation is needed.
 _elements_cache: Optional[gpd.GeoDataFrame] = None
 
 
@@ -541,8 +541,8 @@ def get_elements() -> gpd.GeoDataFrame:
 # ---------------------------------------------------------------------------
 
 
-@app.get(
-    "/elements",
+@router.get(
+    "/",
     summary="List all OSM elements",
     response_class=JSONResponse,
 )
@@ -583,8 +583,8 @@ def list_elements(
     })
 
 
-@app.get(
-    "/elements/nearby",
+@router.get(
+    "/nearby",
     summary="Elements within a radius of a point",
     response_class=JSONResponse,
 )
@@ -640,8 +640,8 @@ def elements_nearby(
     )
 
 
-@app.get(
-    "/elements/{element_id}",
+@router.get(
+    "/{element_id}",
     summary="Get a single element by OSM id",
     response_class=JSONResponse,
 )
@@ -673,17 +673,3 @@ def get_element(element_id: int) -> JSONResponse:
         )
 
     return JSONResponse(content=_row_to_feature(matches.iloc[:1]))
-
-
-# ---------------------------------------------------------------------------
-# CLI entry-point
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    uvicorn.run(
-        "overpass:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info",
-    )
