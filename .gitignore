@@ -1,0 +1,17 @@
+# Environments
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Database
+*.db
+
+# OS
+.DS_Store
+
+# Cache
+kishin_trails/cache
