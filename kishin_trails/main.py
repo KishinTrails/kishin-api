@@ -22,9 +22,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Kishin API",
-    description="Professional level FastAPI server with OSM data and JWT authentication.",
-    version="1.0.0",
+    title="Kishin Trails API",
+    description="",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -38,7 +38,9 @@ def read_root():
     """
     Public root endpoint to verify the API is running.
     """
-    return {"message": "Welcome to Kishin API. Go to /docs for the API documentation."}
+    return {
+        "message": "Welcome to Kishin Trails' API. Go to /docs for the API documentation."
+    }
 
 
 @app.get("/me", summary="Get current user info")
@@ -46,7 +48,10 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     """
     Guarded endpoint to return the currently authenticated user's information.
     """
-    return {"username": current_user.username, "id": current_user.id}
+    return {
+        "username": current_user.username,
+        "id": current_user.id
+    }
 
 
 if __name__ == "__main__":
