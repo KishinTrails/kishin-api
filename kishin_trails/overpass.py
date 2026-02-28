@@ -253,16 +253,20 @@ def load_elements(
     center_lon: float = DEFAULT_CENTER_LON,
     radius_m: float = DEFAULT_RADIUS_M,
 ) -> gpd.GeoDataFrame:
+    return load_elements_at(center_lat, center_lon, radius_m)
+
+
+def load_elements_at(
+    center_lat: float,
+    center_lon: float,
+    radius_m: float,
+) -> gpd.GeoDataFrame:
     bbox = build_bbox(center_lat, center_lon, radius_m)
     query = build_query(bbox)
     osm_data = run_overpass(query)
     ways_gdf, relations_gdf = osm_to_geodataframes(osm_data)
-    # Build geometry map for relations
     geometries = reconstruct_multipolygons(osm_data)
     geom_by_id = {}
-    # Associate geometries with relation ids (order may differ, so map by id if possible)
-    # The reconstruction currently returns geometries in the same order as relations appear.
-    # We'll extract relation ids in order.
     rel_ids = [rel["id"] for rel in osm_data["elements"] if rel["type"] == "relation" and rel.get("tags", {}).get("type") == "multipolygon"]
     for rid, geom in zip(rel_ids, geometries):
         geom_by_id[rid] = geom
