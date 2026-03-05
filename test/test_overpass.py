@@ -20,7 +20,7 @@ from kishin_trails.overpass import (
     CACHE_DIR,
     DEFAULT_CENTER_LAT,
     DEFAULT_CENTER_LON,
-    DEFAULT_RADIUS_M,
+    DEFAULT_OVERPASS_RADIUS_M,
     build_bbox,
     run_overpass,
     osm_to_geodataframes,
@@ -36,7 +36,7 @@ def test_defaults_are_reasonable():
     assert CACHE_DIR.is_dir()  # the directory is created on import
     assert isinstance(DEFAULT_CENTER_LAT, float)
     assert isinstance(DEFAULT_CENTER_LON, float)
-    assert isinstance(DEFAULT_RADIUS_M, (int, float))
+    assert isinstance(DEFAULT_OVERPASS_RADIUS_M, (int, float))
 
 
 # -----------------------------------------------------------------
@@ -110,7 +110,7 @@ def test_build_bbox_basic(lat, lon, radius, expected):
     assert west <= east
 
     # If we supplied an explicit expected tuple, compare within tolerance
-    if expected:
+    if expected is not None:
         for a, b in zip(bbox, expected):
             assert abs(a - b) < 1e-6
 
@@ -226,47 +226,28 @@ def test_osm_to_geodataframes_basic_closed_and_open_ways():
     One closed way → Polygon, one open way → LineString.
     All tags must become columns; missing tags are NaN.
     """
+    NODE_1_ID, NODE_2_ID, NODE_3_ID = 1, 2, 3
+    NODE_4_ID, NODE_5_ID, NODE_6_ID = 4, 5, 6
+    WAY_10_ID, WAY_11_ID = 10, 11
+    WAY_10_TAGS = {"highway": "residential"}
+    WAY_11_TAGS = {"name": "Test road"}
+
     # ── Nodes ────────────────────────────────────────
     nodes = [
-        make_node(1,
-                  0.0,
-                  0.0),
-        make_node(2,
-                  0.0,
-                  1.0),
-        make_node(3,
-                  1.0,
-                  1.0),
-        make_node(4,
-                  1.0,
-                  0.0),
-        make_node(5,
-                  2.0,
-                  0.0),
-        make_node(6,
-                  2.0,
-                  1.0),
+        make_node(NODE_1_ID, 0.0, 0.0),
+        make_node(NODE_2_ID, 0.0, 1.0),
+        make_node(NODE_3_ID, 1.0, 1.0),
+        make_node(NODE_4_ID, 1.0, 0.0),
+        make_node(NODE_5_ID, 2.0, 0.0),
+        make_node(NODE_6_ID, 2.0, 1.0),
     ]
 
     # ── Ways ────────────────────────────────────────
     #   * way 10 – closed square → Polygon
     #   * way 11 – open line   → LineString
     ways = [
-        make_way(10,
-                 [1,
-                  2,
-                  3,
-                  4,
-                  1],
-                 tags={
-                     "highway": "residential"
-                 }),
-        make_way(11,
-                 [5,
-                  6],
-                 tags={
-                     "name": "Test road"
-                 }),
+        make_way(WAY_10_ID, [NODE_1_ID, NODE_2_ID, NODE_3_ID, NODE_4_ID, NODE_1_ID], tags=WAY_10_TAGS),
+        make_way(WAY_11_ID, [NODE_5_ID, NODE_6_ID], tags=WAY_11_TAGS),
     ]
 
     # No relations for this test.
@@ -276,17 +257,17 @@ def test_osm_to_geodataframes_basic_closed_and_open_ways():
 
     # ---- Assertions on the ways GeoDataFrame -----------------
     assert isinstance(ways_gdf, gpd.GeoDataFrame)
-    assert len(ways_gdf) == 2
+    assert len(ways_gdf) == len(ways)
 
     # Polygon row
-    poly_row = ways_gdf.loc[ways_gdf["id"] == 10].iloc[0]
+    poly_row = ways_gdf.loc[ways_gdf["id"] == WAY_10_ID].iloc[0]
     assert isinstance(poly_row.geometry, geom.Polygon)
-    assert poly_row.highway == "residential"
+    assert poly_row.highway == WAY_10_TAGS["highway"]
 
     # LineString row
-    line_row = ways_gdf.loc[ways_gdf["id"] == 11].iloc[0]
+    line_row = ways_gdf.loc[ways_gdf["id"] == WAY_11_ID].iloc[0]
     assert isinstance(line_row.geometry, geom.LineString)
-    assert line_row.name == "Test road"
+    assert line_row.name == WAY_11_TAGS["name"]
 
     # ---- Assertions on the relations GeoDataFrame -------------
     assert isinstance(rels_gdf, gpd.GeoDataFrame)
@@ -295,12 +276,12 @@ def test_osm_to_geodataframes_basic_closed_and_open_ways():
 
 def test_osm_to_geodataframes_degenerate_way_is_discarded():
     """A way with < 2 resolvable nodes should not appear in the result."""
-    nodes = [make_node(1, 0.0, 0.0)]  # only one node
-    ways = [make_way(20,
-                     [1],
-                     tags={
-                         "amenity": "cafe"
-                     })]  # degenerate way
+    NODE_ID = 1
+    WAY_ID = 20
+    WAY_TAGS = {"amenity": "cafe"}
+
+    nodes = [make_node(NODE_ID, 0.0, 0.0)]  # only one node
+    ways = [make_way(WAY_ID, [NODE_ID], tags=WAY_TAGS)]  # degenerate way
     json_blob = build_overpass_json(nodes, ways, [])
 
     ways_gdf, _ = osm_to_geodataframes(json_blob)
@@ -311,13 +292,14 @@ def test_osm_to_geodataframes_degenerate_way_is_discarded():
 
 def test_osm_to_geodataframes_relations_have_none_geometry():
     """Relations are returned with geometry == None (as documented)."""
-    rel = make_relation(30, outer_way_ids=[])
+    REL_ID = 30
+    rel = make_relation(REL_ID, outer_way_ids=[])
     json_blob = build_overpass_json([], [], [rel])
 
     _, rels_gdf = osm_to_geodataframes(json_blob)
 
     assert len(rels_gdf) == 1
-    assert pd.isna(rels_gdf.loc[0, "geometry"])
+    assert rels_gdf.loc[rels_gdf["id"] == REL_ID, "geometry"].iloc[0] is None
 
 
 # -----------------------------------------------------------------
@@ -327,15 +309,19 @@ def test_reconstruct_multipolygons_single_closed_outer():
     """
     One outer way that already forms a closed ring → a single Polygon.
     """
+    NODE_1, NODE_2, NODE_3, NODE_4 = 1, 2, 3, 4
+    WAY_ID = 100
+    REL_ID = 200
+
     # Nodes that form a triangle
     nodes = [
-        make_node(1, 0, 0),
-        make_node(2, 0, 1),
-        make_node(3, 1, 0),
-        make_node(4, 0, 0),  # repeat first node to close the ring
+        make_node(NODE_1, 0, 0),
+        make_node(NODE_2, 0, 1),
+        make_node(NODE_3, 1, 0),
+        make_node(NODE_4, 0, 0),  # repeat first node to close the ring
     ]
-    way = make_way(100, [1, 2, 3, 4])  # closed way
-    rel = make_relation(200, outer_way_ids=[100])
+    way = make_way(WAY_ID, [NODE_1, NODE_2, NODE_3, NODE_4])  # closed way
+    rel = make_relation(REL_ID, outer_way_ids=[WAY_ID])
 
     json_blob = build_overpass_json(nodes, [way], [rel])
 
@@ -351,20 +337,24 @@ def test_reconstruct_multipolygons_multiple_outers_need_stitching():
     Two half‑circles that share an endpoint must be stitched together
     before polygonisation.
     """
+    NODE_A, NODE_B, NODE_C, NODE_D = 1, 2, 3, 4
+    WAY_10_ID, WAY_11_ID = 10, 11
+    REL_ID = 300
+
     # Four nodes: A(0,0), B(0,1), C(1,1), D(1,0)
     nodes = [
-        make_node(1, 0, 0),  # A
-        make_node(2, 0, 1),  # B
-        make_node(3, 1, 1),  # C
-        make_node(4, 1, 0),  # D
+        make_node(NODE_A, 0, 0),  # A
+        make_node(NODE_B, 0, 1),  # B
+        make_node(NODE_C, 1, 1),  # C
+        make_node(NODE_D, 1, 0),  # D
     ]
 
     # Way 10: A → B   (first half)
     # Way 11: B → C → D → A   (second half, closed)
-    way10 = make_way(10, [1, 2])
-    way11 = make_way(11, [2, 3, 4, 1])
+    way10 = make_way(WAY_10_ID, [NODE_A, NODE_B])
+    way11 = make_way(WAY_11_ID, [NODE_B, NODE_C, NODE_D, NODE_A])
 
-    rel = make_relation(300, outer_way_ids=[10, 11])
+    rel = make_relation(REL_ID, outer_way_ids=[WAY_10_ID, WAY_11_ID])
 
     json_blob = build_overpass_json(nodes, [way10, way11], [rel])
 
@@ -380,58 +370,44 @@ def test_reconstruct_multipolygons_ignores_inner_ways():
     Relations that contain inner members must be built from the outer
     members only – inner ways are deliberately ignored (see source).
     """
+    OUTER_NODE_1, OUTER_NODE_2, OUTER_NODE_3, OUTER_NODE_4, OUTER_NODE_5 = 1, 2, 3, 4, 5
+    INNER_NODE_6, INNER_NODE_7, INNER_NODE_8, INNER_NODE_9, INNER_NODE_10 = 6, 7, 8, 9, 10
+    OUTER_WAY_ID = 500
+    INNER_WAY_ID = 501
+    REL_ID = 600
+
     # Simple square for the outer ring
     outer_nodes = [
-        make_node(1,
-                  0,
-                  0),
-        make_node(2,
-                  0,
-                  2),
-        make_node(3,
-                  2,
-                  2),
-        make_node(4,
-                  2,
-                  0),
-        make_node(5,
-                  0,
-                  0),
+        make_node(OUTER_NODE_1, 0, 0),
+        make_node(OUTER_NODE_2, 0, 2),
+        make_node(OUTER_NODE_3, 2, 2),
+        make_node(OUTER_NODE_4, 2, 0),
+        make_node(OUTER_NODE_5, 0, 0),
     ]
-    outer_way = make_way(500, [1, 2, 3, 4, 5])
+    outer_way = make_way(OUTER_WAY_ID, [OUTER_NODE_1, OUTER_NODE_2, OUTER_NODE_3, OUTER_NODE_4, OUTER_NODE_5])
 
     # Inner ring (a smaller square) – should be *ignored*
     inner_nodes = [
-        make_node(6,
-                  0.5,
-                  0.5),
-        make_node(7,
-                  0.5,
-                  1.5),
-        make_node(8,
-                  1.5,
-                  1.5),
-        make_node(9,
-                  1.5,
-                  0.5),
-        make_node(10,
-                  0.5,
-                  0.5),
+        make_node(INNER_NODE_6, 0.5, 0.5),
+        make_node(INNER_NODE_7, 0.5, 1.5),
+        make_node(INNER_NODE_8, 1.5, 1.5),
+        make_node(INNER_NODE_9, 1.5, 0.5),
+        make_node(INNER_NODE_10, 0.5, 0.5),
     ]
-    inner_way = make_way(501, [6, 7, 8, 9, 10])
+    inner_way = make_way(INNER_WAY_ID, [INNER_NODE_6, INNER_NODE_7, INNER_NODE_8, INNER_NODE_9, INNER_NODE_10])
 
     rel = {
         "type": "relation",
-        "id": 600,
+        "id": REL_ID,
         "members": [
             {
                 "type": "way",
-                "ref": 500,
+                "ref": OUTER_WAY_ID,
                 "role": "outer"
             },
             {
                 "type": "way",
-                "ref": 501,
+                "ref": INNER_WAY_ID,
                 "role": "inner"
             },
         ],
@@ -462,39 +438,34 @@ def test_reconstruct_multipolygons_missing_way_is_skipped():
     the function must simply ignore that member and still return any
     geometry that can be built from the remaining members.
     """
+    VALID_NODE_1, VALID_NODE_2, VALID_NODE_3, VALID_NODE_4, VALID_NODE_5 = 1, 2, 3, 4, 5
+    VALID_WAY_ID = 700
+    MISSING_WAY_ID = 999
+    REL_ID = 800
+
     # One valid outer way (a tiny square)
     nodes = [
-        make_node(1,
-                  0,
-                  0),
-        make_node(2,
-                  0,
-                  1),
-        make_node(3,
-                  1,
-                  1),
-        make_node(4,
-                  1,
-                  0),
-        make_node(5,
-                  0,
-                  0),
+        make_node(VALID_NODE_1, 0, 0),
+        make_node(VALID_NODE_2, 0, 1),
+        make_node(VALID_NODE_3, 1, 1),
+        make_node(VALID_NODE_4, 1, 0),
+        make_node(VALID_NODE_5, 0, 0),
     ]
-    valid_way = make_way(700, [1, 2, 3, 4, 5])
+    valid_way = make_way(VALID_WAY_ID, [VALID_NODE_1, VALID_NODE_2, VALID_NODE_3, VALID_NODE_4, VALID_NODE_5])
 
     # Relation points to 700 (real) and 999 (non‑existent)
     rel = {
         "type": "relation",
-        "id": 800,
+        "id": REL_ID,
         "members": [
             {
                 "type": "way",
-                "ref": 700,
+                "ref": VALID_WAY_ID,
                 "role": "outer"
             },
             {
                 "type": "way",
-                "ref": 999,
+                "ref": MISSING_WAY_ID,
                 "role": "outer"
             },
         ],
@@ -520,27 +491,33 @@ def test_remove_ways_inside_relations_basic():
     A LineString that lies completely inside a Polygon relation should be
     removed, while a line that merely touches or crosses the polygon stays.
     """
+    REL_ID = 1
+    WAY_10_ID, WAY_11_ID = 10, 11
+    RELATION_POLYGON_COORDS = [(0, 0), (0, 10), (10, 10), (10, 0)]
+    LINE_INSIDE_COORDS = [(2, 2), (8, 8)]
+    LINE_CROSS_COORDS = [(-5, 5), (15, 5)]
+
     # Relation polygon: a 10×10 square
-    poly = geom.Polygon([(0, 0), (0, 10), (10, 10), (10, 0)])
+    poly = geom.Polygon(RELATION_POLYGON_COORDS)
 
     rels_gdf = gpd.GeoDataFrame(
         {
-            "id": [1],
+            "id": [REL_ID],
             "geometry": [poly]
         },
         crs="EPSG:4326",
     )
 
     # Way 1 – inside the square
-    line_inside = geom.LineString([(2, 2), (8, 8)])
+    line_inside = geom.LineString(LINE_INSIDE_COORDS)
 
     # Way 2 – crossing the square border
-    line_cross = geom.LineString([(-5, 5), (15, 5)])
+    line_cross = geom.LineString(LINE_CROSS_COORDS)
 
     ways_gdf = gpd.GeoDataFrame(
         {
-            "id": [10,
-                   11],
+            "id": [WAY_10_ID,
+                   WAY_11_ID],
             "geometry": [line_inside,
                          line_cross]
         },
@@ -551,7 +528,7 @@ def test_remove_ways_inside_relations_basic():
 
     # Only the crossing line must survive.
     assert len(filtered) == 1
-    assert filtered.iloc[0]["id"] == 11
+    assert filtered.iloc[0]["id"] == WAY_11_ID
 
 
 def test_remove_ways_inside_relations_no_relations():
@@ -559,14 +536,17 @@ def test_remove_ways_inside_relations_no_relations():
     When there are no relation polygons, the function must return the
     original ``ways_gdf`` unchanged.
     """
+    WAY_1_ID, WAY_2_ID = 1, 2
+    POINT_1_COORDS, POINT_2_COORDS = (0, 0), (1, 1)
+
     ways = gpd.GeoDataFrame(
         {
-            "id": [1,
-                   2],
-            "geometry": [geom.Point(0,
-                                    0),
-                         geom.Point(1,
-                                    1)]
+            "id": [WAY_1_ID,
+                   WAY_2_ID],
+            "geometry": [geom.Point(POINT_1_COORDS[0],
+                                    POINT_1_COORDS[1]),
+                         geom.Point(POINT_2_COORDS[0],
+                                    POINT_2_COORDS[1])]
         },
         crs="EPSG:4326",
     )
@@ -582,25 +562,22 @@ def test_remove_ways_inside_relations_crs_mismatch_raises():
     The function should raise a clear error when the two GeoDataFrames have
     different CRS objects (otherwise spatial predicates would be meaningless).
     """
+    TEST_ID = 1
+    WAY_POINT_COORDS = (0, 0)
+    RELATION_POLYGON_COORDS = [(0, 0), (0, 1), (1, 1), (1, 0)]
+
     ways = gpd.GeoDataFrame(
         {
-            "id": [1],
-            "geometry": [geom.Point(0,
-                                    0)]
+            "id": [TEST_ID],
+            "geometry": [geom.Point(WAY_POINT_COORDS[0],
+                                    WAY_POINT_COORDS[1])]
         },
         crs="EPSG:4326",
     )
     rels = gpd.GeoDataFrame(
         {
-            "id": [1],
-            "geometry": [geom.Polygon([(0,
-                                        0),
-                                       (0,
-                                        1),
-                                       (1,
-                                        1),
-                                       (1,
-                                        0)])]
+            "id": [TEST_ID],
+            "geometry": [geom.Polygon(RELATION_POLYGON_COORDS)]
         },
         crs="EPSG:3857",
     )
@@ -620,35 +597,41 @@ def test_full_pipeline_multipolygon_and_way_filtering():
     3. Attach those geometries to the relations DataFrame.
     4. Remove any ways that fall completely inside the new polygons.
     """
+    OUTER_NODE_1, OUTER_NODE_2, OUTER_NODE_3, OUTER_NODE_4, OUTER_NODE_5 = 1, 2, 3, 4, 5
+    INNER_NODE_6, INNER_NODE_7 = 6, 7
+    OUTER_WAY_ID = 100
+    INNER_LINE_ID = 101
+    RELATION_ID = 200
+
     # ----- Build a minimal OSM payload -------------------------
     # Nodes for a square outer ring (relation) and a diagonal line (way)
     nodes = [
-        make_node(1, 0, 0),
-        make_node(2, 0, 5),
-        make_node(3, 5, 5),
-        make_node(4, 5, 0),
-        make_node(5, 0, 0),          # close outer way
-        make_node(6, 1, 1),
-        make_node(7, 4, 4),          # line inside the square
+        make_node(OUTER_NODE_1, 0, 0),
+        make_node(OUTER_NODE_2, 0, 5),
+        make_node(OUTER_NODE_3, 5, 5),
+        make_node(OUTER_NODE_4, 5, 0),
+        make_node(OUTER_NODE_5, 0, 0),          # close outer way
+        make_node(INNER_NODE_6, 1, 1),
+        make_node(INNER_NODE_7, 4, 4),          # line inside the square
     ]
 
-    outer_way = make_way(100, [1, 2, 3, 4, 5])
-    inner_line = make_way(101, [6, 7])
+    outer_way = make_way(OUTER_WAY_ID, [OUTER_NODE_1, OUTER_NODE_2, OUTER_NODE_3, OUTER_NODE_4, OUTER_NODE_5])
+    inner_line = make_way(INNER_LINE_ID, [INNER_NODE_6, INNER_NODE_7])
 
-    rel = make_relation(200, outer_way_ids=[100])
+    rel = make_relation(RELATION_ID, outer_way_ids=[OUTER_WAY_ID])
 
     json_blob = build_overpass_json(nodes, [outer_way, inner_line], [rel])
 
-    # ----- Step 1: parse -------------------------------------------------
+    # ----- Step 1: parse -------------------------------------------------
     ways_gdf, rels_gdf = osm_to_geodataframes(json_blob)
 
-    # ----- Step 2: build multipolygon geometry ----------------------------
+    # ----- Step 2: build multipolygon geometry ----------------------------
     polys = reconstruct_multipolygons(json_blob)
     assert len(polys) == 1
     rels_gdf = rels_gdf.copy()
-    rels_gdf.loc[rels_gdf["id"] == 200, "geometry"] = polys[0]
+    rels_gdf.loc[rels_gdf["id"] == RELATION_ID, "geometry"] = polys[0]
 
-    # ----- Step 3: filter ways -------------------------------------------
+    # ----- Step 3: filter ways -------------------------------------------
     filtered = remove_ways_inside_relations(ways_gdf, rels_gdf)
 
     # The diagonal line lies completely inside the square, so it must be gone.

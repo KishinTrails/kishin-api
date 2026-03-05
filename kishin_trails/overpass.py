@@ -27,9 +27,11 @@ except ImportError:  # pragma: no cover
 try:
     from fastapi.responses import JSONResponse
 except ImportError:  # pragma: no cover
+
     class _DummyResponse(dict):
         def __init__(self, content: Any):
             super().__init__(content=content)
+
     JSONResponse = _DummyResponse
 
 from kishin_trails.config import settings
@@ -42,21 +44,20 @@ logging.basicConfig(
 logger = logging.getLogger("overpass")
 
 OVERPASS_URL = settings.OVERPASS_URL
-import tempfile
 # Primary cache directory used by the Overpass client. This is a constant that tests rely on.
-CACHE_DIR_REAL = Path(tempfile.mkdtemp())
+CACHE_DIR_REAL = Path(__file__).parent.parent / "cache"
 CACHE_DIR_REAL.mkdir(exist_ok=True)
 # Exported name; can be monkey‑patched by tests for unrelated purposes.
 CACHE_DIR = CACHE_DIR_REAL
 
-DEFAULT_CENTER_LAT = 45.689125611
-DEFAULT_CENTER_LON = 2.976995577
-DEFAULT_RADIUS_M = 10_000
-NEARBY_DEFAULT_RADIUS_M = 30.0
+DEFAULT_CENTER_LAT = settings.DEFAULT_CENTER_LAT
+DEFAULT_CENTER_LON = settings.DEFAULT_CENTER_LON
+DEFAULT_OVERPASS_RADIUS_M = settings.DEFAULT_OVERPASS_RADIUS_M
 
 # ---------------------------------------------------------------------------
 # Bounding box utilities
 # ---------------------------------------------------------------------------
+
 
 def build_bbox(lat: float, lon: float, radius_m: float) -> Tuple[float, float, float, float]:
     """Return (south, west, north, east) degrees around a point.
@@ -76,9 +77,11 @@ def build_bbox(lat: float, lon: float, radius_m: float) -> Tuple[float, float, f
     east = lon + delta_lon
     return south, west, north, east
 
+
 # ---------------------------------------------------------------------------
-# Overpass query builder (unchanged)
+# Overpass query builder
 # ---------------------------------------------------------------------------
+
 
 def build_query(bbox: Tuple[float, float, float, float]) -> str:
     south, west, north, east = bbox
@@ -115,9 +118,11 @@ out body;
 out body qt;
 """
 
+
 # ---------------------------------------------------------------------------
 # Overpass HTTP client with file‑based cache
 # ---------------------------------------------------------------------------
+
 
 def run_overpass(query: str, cache_dir: Path | None = None) -> dict:
     """Execute the Overpass query, using a hash‑based file cache.
@@ -132,16 +137,24 @@ def run_overpass(query: str, cache_dir: Path | None = None) -> dict:
         logger.info("Overpass cache hit (%s)", hash_key)
         return json.loads(cache_file.read_text())
     logger.info("Querying Overpass API…")
-    response = requests.post(OVERPASS_URL, data={"data": query}, timeout=90)
+    response = requests.post(
+        OVERPASS_URL,
+        data={
+            "data": query
+        },
+        timeout=90
+    )
     response.raise_for_status()
     data = response.json()
     cache_file.write_text(json.dumps(data))
     logger.info("Overpass response cached (%s)", hash_key)
     return data
 
+
 # ---------------------------------------------------------------------------
 # Geometry reconstruction
 # ---------------------------------------------------------------------------
+
 
 def reconstruct_multipolygons(osm_json: dict) -> List[Polygon | MultiPolygon]:
     """Reconstruct multipolygon geometries from OSM relation data.
@@ -159,13 +172,21 @@ def reconstruct_multipolygons(osm_json: dict) -> List[Polygon | MultiPolygon]:
     * If multiple outer rings exist for a relation they are combined into a
       :class:`shapely.geometry.MultiPolygon`.
     """
-
     """Return a list of Polygon/MultiPolygon objects for multipolygon relations.
     Only outer ways are considered; inner rings are ignored.
     """
     elements = osm_json["elements"]
-    nodes = {el["id"]: (el["lon"], el["lat"]) for el in elements if el["type"] == "node"}
-    ways = {el["id"]: el for el in elements if el["type"] == "way"}
+    nodes = {
+        el["id"]: (el["lon"],
+                   el["lat"])
+        for el in elements
+        if el["type"] == "node"
+    }
+    ways = {
+        el["id"]: el
+        for el in elements
+        if el["type"] == "way"
+    }
     relations = [el for el in elements if el["type"] == "relation"]
     geometries: List[Polygon | MultiPolygon] = []
     for rel in relations:
@@ -189,13 +210,19 @@ def reconstruct_multipolygons(osm_json: dict) -> List[Polygon | MultiPolygon]:
         geometries.append(polys[0] if len(polys) == 1 else MultiPolygon(polys))
     return geometries
 
+
 # ---------------------------------------------------------------------------
 # Convert Overpass JSON to GeoDataFrames
 # ---------------------------------------------------------------------------
 
+
 def osm_to_geodataframes(osm_json: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     elements = osm_json["elements"]
-    nodes = {el["id"]: el for el in elements if el["type"] == "node"}
+    nodes = {
+        el["id"]: el
+        for el in elements
+        if el["type"] == "node"
+    }
     ways_rows: List[dict] = []
     relations_rows: List[dict] = []
     for el in elements:
@@ -207,9 +234,19 @@ def osm_to_geodataframes(osm_json: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataF
                 geom = LineString(coords)
             else:
                 continue
-            ways_rows.append({"id": el["id"], "geometry": geom, **el.get("tags", {})})
+            ways_rows.append({
+                "id": el["id"],
+                "geometry": geom,
+                **el.get("tags",
+                         {})
+            })
         elif el["type"] == "relation":
-            relations_rows.append({"id": el["id"], "geometry": None, **el.get("tags", {})})
+            relations_rows.append({
+                "id": el["id"],
+                "geometry": None,
+                **el.get("tags",
+                         {})
+            })
     if ways_rows:
         ways_gdf = gpd.GeoDataFrame(ways_rows, crs="EPSG:4326")
         # Set index to the 'name' tag where present, otherwise keep numeric id.
@@ -228,13 +265,13 @@ def osm_to_geodataframes(osm_json: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataF
         relations_gdf = gpd.GeoDataFrame(columns=["id", "geometry"], crs="EPSG:4326")
     return ways_gdf, relations_gdf
 
+
 # ---------------------------------------------------------------------------
 # Remove ways fully contained in relation polygons
 # ---------------------------------------------------------------------------
 
-def remove_ways_inside_relations(
-    ways_gdf: gpd.GeoDataFrame, relations_gdf: gpd.GeoDataFrame
-) -> gpd.GeoDataFrame:
+
+def remove_ways_inside_relations(ways_gdf: gpd.GeoDataFrame, relations_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     if ways_gdf.crs != relations_gdf.crs:
         raise ValueError("CRS mismatch between ways and relations")
     valid_geoms = [geom for geom in relations_gdf.geometry if geom is not None]
@@ -244,14 +281,16 @@ def remove_ways_inside_relations(
     mask = ways_gdf.geometry.apply(lambda g: not g.within(union_geom))
     return ways_gdf[mask].copy()
 
+
 # ---------------------------------------------------------------------------
 # Full pipeline used by API and tests
 # ---------------------------------------------------------------------------
 
+
 def load_elements(
     center_lat: float = DEFAULT_CENTER_LAT,
     center_lon: float = DEFAULT_CENTER_LON,
-    radius_m: float = DEFAULT_RADIUS_M,
+    radius_m: float = DEFAULT_OVERPASS_RADIUS_M,
 ) -> gpd.GeoDataFrame:
     return load_elements_at(center_lat, center_lon, radius_m)
 
@@ -267,7 +306,11 @@ def load_elements_at(
     ways_gdf, relations_gdf = osm_to_geodataframes(osm_data)
     geometries = reconstruct_multipolygons(osm_data)
     geom_by_id = {}
-    rel_ids = [rel["id"] for rel in osm_data["elements"] if rel["type"] == "relation" and rel.get("tags", {}).get("type") == "multipolygon"]
+    rel_ids = [
+        rel["id"]
+        for rel in osm_data["elements"]
+        if rel["type"] == "relation" and rel.get("tags", {}).get("type") == "multipolygon"
+    ]
     for rid, geom in zip(rel_ids, geometries):
         geom_by_id[rid] = geom
     relations_gdf["geometry"] = relations_gdf["id"].map(geom_by_id)
@@ -288,6 +331,7 @@ def load_elements_at(
     )
     return combined
 
+
 # ---------------------------------------------------------------------------
 # Optional FastAPI router
 # ---------------------------------------------------------------------------
@@ -298,34 +342,47 @@ else:
 
 _elements_cache: Optional[gpd.GeoDataFrame] = None
 
+
 def get_elements() -> gpd.GeoDataFrame:
     global _elements_cache
     if _elements_cache is None:
         _elements_cache = load_elements()
     return _elements_cache
 
+
 # ---------------------------------------------------------------------------
 # API endpoints (no‑op when FastAPI is unavailable)
 # ---------------------------------------------------------------------------
 if router:
-    @router.get("/", summary="List all OSM elements", response_class=JSONResponse)
-    def list_elements(osm_type: Optional[str] = Query(None, description="Filter by OSM element type: 'way' or 'relation'.")):
-        gdf = get_elements()
-        if osm_type is not None:
-            if osm_type not in ("way", "relation"):
-                raise HTTPException(status_code=400, detail="osm_type must be 'way' or 'relation'")
-            gdf = gdf[gdf["osm_type"] == osm_type]
-        return JSONResponse(content={"type": "FeatureCollection", "features": _gdf_to_features(gdf)})
 
-    @router.get("/nearby", summary="Elements within a radius of a point", response_class=JSONResponse)
+    @router.get(
+        "/",
+        summary="List all OSM elements",
+        response_class=JSONResponse,
+        deprecated=True,
+    )
+    def list_elements():
+        gdf = get_elements()
+        return JSONResponse(content={
+            "type": "FeatureCollection",
+            "features": _gdf_to_features(gdf)
+        })
+
+    @router.get(
+        "/nearby",
+        summary="Elements within a radius of a point",
+        response_class=JSONResponse,
+        deprecated=True,
+    )
     def elements_nearby(
-        lat: float = Query(..., description="Latitude of the query point, in decimal degrees."),
-        lon: float = Query(..., description="Longitude of the query point, in decimal degrees."),
+        lat: float = Query(...,
+                           description="Latitude of the query point, in decimal degrees."),
+        lon: float = Query(...,
+                           description="Longitude of the query point, in decimal degrees."),
         radius_m: float = Query(
-            NEARBY_DEFAULT_RADIUS_M,
             ge=1,
             le=50_000,
-            description="Search radius in metres.  Defaults to 30 m, capped at 50 km.",
+            description="Search radius in metres.",
         ),
     ):
         gdf = get_elements()
@@ -333,9 +390,20 @@ if router:
         circle = point.buffer(radius_m)
         gdf_merc = gdf[gdf.geometry.notna()].to_crs("EPSG:3857")
         nearby = gdf_merc[gdf_merc.geometry.intersects(circle)].to_crs("EPSG:4326")
-        return JSONResponse(content={"type": "FeatureCollection", "count": len(nearby), "features": _gdf_to_features(nearby)})
+        return JSONResponse(
+            content={
+                "type": "FeatureCollection",
+                "count": len(nearby),
+                "features": _gdf_to_features(nearby)
+            }
+        )
 
-    @router.get("/{element_id}", summary="Get a single element by OSM id", response_class=JSONResponse)
+    @router.get(
+        "/{element_id}",
+        summary="Get a single element by OSM id",
+        response_class=JSONResponse,
+        deprecated=True,
+    )
     def get_element(element_id: int):
         gdf = get_elements()
         matches = gdf[gdf["id"] == element_id]
@@ -343,11 +411,13 @@ if router:
             raise HTTPException(status_code=404, detail=f"No element found with id={element_id}")
         return JSONResponse(content=_row_to_feature(matches.iloc[:1]))
 
+
 # ---------------------------------------------------------------------------
 # Helper serialisation functions
 # ---------------------------------------------------------------------------
 def _gdf_to_features(gdf: gpd.GeoDataFrame) -> List[dict[str, Any]]:
     return json.loads(gdf.to_json())["features"]
+
 
 def _row_to_feature(row: gpd.GeoDataFrame) -> dict[str, Any]:
     return json.loads(row.to_json())["features"][0]

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
 
     # Overpass API
     OVERPASS_URL: str = "https://overpass-api.de/api/interpreter"
+    DEFAULT_CENTER_LAT: float = 48.85454010062465
+    DEFAULT_CENTER_LON: float = 2.3476249395829583
+    DEFAULT_OVERPASS_RADIUS_M: int = 10_000
+    DEFAULT_POI_RADIUS_M: int = 1000
 
     # Load from .env file if it exists
     model_config = SettingsConfigDict(env_file=".env")
