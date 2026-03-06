@@ -253,7 +253,7 @@ def test_osm_to_geodataframes_basic_closed_and_open_ways():
     # No relations for this test.
     json_blob = build_overpass_json(nodes, ways, [])
 
-    ways_gdf, rels_gdf = osm_to_geodataframes(json_blob)
+    ways_gdf, rels_gdf, nodes_gdf = osm_to_geodataframes(json_blob)
 
     # ---- Assertions on the ways GeoDataFrame -----------------
     assert isinstance(ways_gdf, gpd.GeoDataFrame)
@@ -284,7 +284,7 @@ def test_osm_to_geodataframes_degenerate_way_is_discarded():
     ways = [make_way(WAY_ID, [NODE_ID], tags=WAY_TAGS)]  # degenerate way
     json_blob = build_overpass_json(nodes, ways, [])
 
-    ways_gdf, _ = osm_to_geodataframes(json_blob)
+    ways_gdf, _, _ = osm_to_geodataframes(json_blob)
 
     # The degenerate way must be filtered out.
     assert ways_gdf.empty
@@ -296,10 +296,41 @@ def test_osm_to_geodataframes_relations_have_none_geometry():
     rel = make_relation(REL_ID, outer_way_ids=[])
     json_blob = build_overpass_json([], [], [rel])
 
-    _, rels_gdf = osm_to_geodataframes(json_blob)
+    _, rels_gdf, _ = osm_to_geodataframes(json_blob)
 
     assert len(rels_gdf) == 1
     assert rels_gdf.loc[rels_gdf["id"] == REL_ID, "geometry"].iloc[0] is None
+
+
+def test_osm_to_geodataframes_nodes_have_point_geometry():
+    """Nodes should be returned with Point geometry and correct coordinates."""
+    nodes = [
+        make_node(100, 45.0, 2.0),
+        make_node(101, 45.1, 2.1),
+    ]
+    json_blob = build_overpass_json(nodes, [], [])
+
+    _, _, nodes_gdf = osm_to_geodataframes(json_blob)
+
+    assert len(nodes_gdf) == 2
+    assert nodes_gdf.iloc[0].geometry.geom_type == "Point"
+    assert nodes_gdf.iloc[0].geometry.x == 2.0
+    assert nodes_gdf.iloc[0].geometry.y == 45.0
+    assert nodes_gdf.iloc[1].geometry.x == 2.1
+    assert nodes_gdf.iloc[1].geometry.y == 45.1
+
+
+def test_osm_to_geodataframes_nodes_with_tags():
+    """Node tags should be preserved as columns in the GeoDataFrame."""
+    node = make_node(100, 45.0, 2.0)
+    node["tags"] = {"name": "Test Peak", "tourism": "viewpoint"}
+    json_blob = build_overpass_json([node], [], [])
+
+    _, _, nodes_gdf = osm_to_geodataframes(json_blob)
+
+    assert len(nodes_gdf) == 1
+    assert nodes_gdf.iloc[0]["name"] == "Test Peak"
+    assert nodes_gdf.iloc[0]["tourism"] == "viewpoint"
 
 
 # -----------------------------------------------------------------
@@ -623,7 +654,7 @@ def test_full_pipeline_multipolygon_and_way_filtering():
     json_blob = build_overpass_json(nodes, [outer_way, inner_line], [rel])
 
     # ----- Step 1: parse -------------------------------------------------
-    ways_gdf, rels_gdf = osm_to_geodataframes(json_blob)
+    ways_gdf, rels_gdf, nodes_gdf = osm_to_geodataframes(json_blob)
 
     # ----- Step 2: build multipolygon geometry ----------------------------
     polys = reconstruct_multipolygons(json_blob)
@@ -647,7 +678,8 @@ def test_osm_to_geodataframes_returns_empty_gdf_when_no_ways(tmp_path):
     GeoDataFrames.
     """
     json_blob = build_overpass_json([], [], [])
-    ways_gdf, rels_gdf = osm_to_geodataframes(json_blob)
+    ways_gdf, rels_gdf, nodes_gdf = osm_to_geodataframes(json_blob)
 
     assert ways_gdf.empty
     assert rels_gdf.empty
+    assert nodes_gdf.empty
