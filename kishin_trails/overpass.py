@@ -36,6 +36,7 @@ except ImportError:  # pragma: no cover
 
 from kishin_trails.config import settings
 from kishin_trails.dependencies import get_current_user
+from kishin_trails.utils import get_h3_circle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -216,7 +217,7 @@ def reconstruct_multipolygons(osm_json: dict) -> List[Polygon | MultiPolygon]:
 # ---------------------------------------------------------------------------
 
 
-def osm_to_geodataframes(osm_json: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+def osm_to_geodataframes(osm_json: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame]:
     elements = osm_json["elements"]
     nodes = {
         el["id"]: el
@@ -263,7 +264,24 @@ def osm_to_geodataframes(osm_json: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataF
         relations_gdf = gpd.GeoDataFrame(relations_rows, crs="EPSG:4326")
     else:
         relations_gdf = gpd.GeoDataFrame(columns=["id", "geometry"], crs="EPSG:4326")
-    return ways_gdf, relations_gdf
+
+    # Process nodes
+    nodes_rows: List[dict] = []
+    for el in elements:
+        if el["type"] == "node":
+            nodes_rows.append({
+                "id": el["id"],
+                "geometry": Point(el["lon"],
+                                  el["lat"]),
+                **el.get("tags",
+                         {})
+            })
+    if nodes_rows:
+        nodes_gdf = gpd.GeoDataFrame(nodes_rows, crs="EPSG:4326")
+    else:
+        nodes_gdf = gpd.GeoDataFrame(columns=["id", "geometry"], crs="EPSG:4326")
+
+    return ways_gdf, relations_gdf, nodes_gdf
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +321,7 @@ def load_elements_at(
     bbox = build_bbox(center_lat, center_lon, radius_m)
     query = build_query(bbox)
     osm_data = run_overpass(query)
-    ways_gdf, relations_gdf = osm_to_geodataframes(osm_data)
+    ways_gdf, relations_gdf, nodes_gdf = osm_to_geodataframes(osm_data)
     geometries = reconstruct_multipolygons(osm_data)
     geom_by_id = {}
     rel_ids = [
@@ -320,12 +338,15 @@ def load_elements_at(
     ways_gdf["osm_type"] = "way"
     relations_gdf = relations_gdf.copy()
     relations_gdf["osm_type"] = "relation"
-    combined = gpd.pd.concat([ways_gdf, relations_gdf], ignore_index=True)
+    nodes_gdf = nodes_gdf.copy()
+    nodes_gdf["osm_type"] = "node"
+    combined = gpd.pd.concat([ways_gdf, relations_gdf, nodes_gdf], ignore_index=True)
     combined = gpd.GeoDataFrame(combined, crs="EPSG:4326")
     logger.info(
-        "Pipeline complete — %d ways, %d relations (%d total, %d with geometry)",
+        "Pipeline complete — %d ways, %d relations, %d nodes (%d total, %d with geometry)",
         len(ways_gdf),
         len(relations_gdf),
+        len(nodes_gdf),
         len(combined),
         combined.geometry.notna().sum(),
     )
@@ -370,23 +391,27 @@ if router:
 
     @router.get(
         "/nearby",
-        summary="Elements within a radius of a point",
+        summary="Elements within an H3 cell",
         response_class=JSONResponse,
         deprecated=True,
     )
     def elements_nearby(
-        lat: float = Query(...,
-                           description="Latitude of the query point, in decimal degrees."),
-        lon: float = Query(...,
-                           description="Longitude of the query point, in decimal degrees."),
-        radius_m: float = Query(
-            ge=1,
-            le=50_000,
-            description="Search radius in metres.",
+        h3_cell: str = Query(...,
+                             description="H3 hexagonal cell identifier (e.g., '851f9633fffffff')."),
+        parent_level: int = Query(
+            0,
+            ge=0,
+            le=5,
+            description="Level of parent cell to search. 0 = current cell, 1 = first parent, etc.",
         ),
     ):
+        try:
+            lat, lng, radius_m, search_cell = get_h3_circle(h3_cell, parent_level)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         gdf = get_elements()
-        point = gpd.GeoDataFrame(geometry=[Point(lon, lat)], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
+        point = gpd.GeoDataFrame(geometry=[Point(lng, lat)], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
         circle = point.buffer(radius_m)
         gdf_merc = gdf[gdf.geometry.notna()].to_crs("EPSG:3857")
         nearby = gdf_merc[gdf_merc.geometry.intersects(circle)].to_crs("EPSG:4326")
@@ -394,6 +419,14 @@ if router:
             content={
                 "type": "FeatureCollection",
                 "count": len(nearby),
+                "h3_cell": h3_cell,
+                "parent_level": parent_level,
+                "search_cell": search_cell,
+                "center": {
+                    "lat": lat,
+                    "lng": lng
+                },
+                "radius_m": radius_m,
                 "features": _gdf_to_features(nearby)
             }
         )
