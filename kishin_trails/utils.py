@@ -65,3 +65,17 @@ def get_h3_circle(h3_cell: str, parent_level: int = 0) -> tuple[float, float, in
     radius_m = get_h3_cell_radius(search_cell)
     
     return lat, lng, radius_m, search_cell
+
+
+def get_h3_cell(lat: float, lng: float, resolution: int) -> str:
+    """Get H3 cell identifier from coordinates and resolution.
+    
+    Args:
+        lat: Latitude in decimal degrees.
+        lng: Longitude in decimal degrees.
+        resolution: H3 resolution level (0-15).
+        
+    Returns:
+        H3 cell identifier.
+    """
+    return h3.latlng_to_cell(lat, lng, resolution)
