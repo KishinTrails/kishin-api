@@ -55,11 +55,13 @@ class PoI:
         self.geometry: Point = geometry
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "id": self.id,
             "name": self.name,
-            "geometry": self.geometry
         }
+        if self.geometry is not None:
+            result["geometry"] = str(self.geometry)
+        return result
 
 
 class PeakPoI(PoI):
@@ -110,6 +112,48 @@ def transform_waypoint_to_poi(waypoint: dict) -> PoI:
         return IndustrialPoI(id=poi_id, name=name, geometry=geometry)
 
     return PoI(id=poi_id, name=name, geometry=geometry)
+
+
+def select_best_poi(elements: List[dict]) -> dict | None:
+    """Select the best POI from a list of elements based on priority.
+    
+    Priority: PeakPoI > NaturalPoI > IndustrialPoI
+    Tie-breaker: Lowest ID first
+    
+    Args:
+        elements: List of element dicts with 'id' and 'tags'.
+        
+    Returns:
+        Dict with 'type' (poi type string) and 'poi' (poi data dict), or None if no match.
+    """
+    if not elements:
+        return None
+
+    # Convert all elements to PoI objects
+    pois = []
+    for elem in elements:
+        waypoint = {
+            "id": elem.get("id"),
+            "tags": elem.get("tags",
+                             {})
+        }
+        poi = transform_waypoint_to_poi(waypoint)
+        pois.append(poi)
+
+    # Apply priority: Peak > Natural > Industrial
+    for ptype_class in [PeakPoI, NaturalPoI, IndustrialPoI]:
+        matching = [p for p in pois if isinstance(p, ptype_class)]
+        if matching:
+            # Sort by ID and return first
+            matching.sort(key=lambda p: p.id)
+            selected = matching[0]
+            type_name = ptype_class.__name__.replace("PoI", "").lower()
+            return {
+                "type": type_name,
+                "poi": selected.to_dict()
+            }
+
+    return None
 
 
 def find_nearby_waypoints(gdf: gpd.GeoDataFrame, lat: float, lng: float, radius_m: float) -> List[dict[str, Any]]:
@@ -192,5 +236,53 @@ if router:
                 "parent_level": parent_level,
                 "search_cell": search_cell,
                 "features": pois,
+            }
+        )
+
+    @router.get(
+        "/bycell",
+        summary="Get POI for a single H3 cell",
+        response_class=JSONResponse,
+    )
+    def get_poi_by_cell(
+        h3_cell: str = Query(...,
+                             description="H3 hexagonal cell identifier (e.g., '851f9633fffffff').")
+    ):
+        try:
+            lat, lng, radius_m, _ = get_h3_circle(h3_cell, 0)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        gdf = load_elements_at(lat, lng, radius_m)
+
+        elements = []
+        for _, row in gdf.iterrows():
+            elements.append({
+                "id": row["id"],
+                "tags": dict(row.items())
+            })
+
+        result = select_best_poi(elements)
+
+        if result is None:
+            return JSONResponse(content={
+                "h3_cell": h3_cell,
+                "center": {
+                    "lat": lat,
+                    "lng": lng
+                },
+                "count": 0
+            })
+
+        return JSONResponse(
+            content={
+                "h3_cell": h3_cell,
+                "center": {
+                    "lat": lat,
+                    "lng": lng
+                },
+                "type": result["type"],
+                "count": 1,
+                "poi": result["poi"]
             }
         )

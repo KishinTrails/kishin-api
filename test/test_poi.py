@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from shapely.geometry import Point
 
-from kishin_trails.poi import IndustrialPoI, NaturalPoI, PeakPoI, PoI, transform_waypoint_to_poi
+from kishin_trails.poi import IndustrialPoI, NaturalPoI, PeakPoI, PoI, select_best_poi, transform_waypoint_to_poi
 
 
 class TestPoI:
@@ -71,14 +71,13 @@ class TestPoIGeometry:
         poi = PoI(id=1, name="Test", geometry=expected_geometry)
         result = poi.to_dict()
         assert "geometry" in result
-        assert result["geometry"] == expected_geometry
+        assert "POINT" in result["geometry"]
 
     def test_poi_to_dict_excludes_geometry_when_none(self) -> None:
         """PoI.to_dict() should handle geometry=None."""
         poi = PoI(id=1, name="Test", geometry=None)
         result = poi.to_dict()
-        assert "geometry" in result
-        assert result["geometry"] is None
+        assert "geometry" not in result
 
     def test_peakpoi_with_geometry(self) -> None:
         """PeakPoI should store geometry when provided."""
@@ -422,3 +421,52 @@ class TestPoiTypePriority:
         result = transform_waypoint_to_poi(waypoint)
         assert isinstance(result, NaturalPoI)
         assert not isinstance(result, IndustrialPoI)
+
+
+class TestSelectBestPoi:
+    """Tests for the select_best_poi function."""
+    def test_select_best_poi_returns_peak_over_natural(self) -> None:
+        """select_best_poi should return peak when both exist."""
+        elements = [
+            {"id": 100, "tags": {"name": "Park", "leisure": "park"}},
+            {"id": 200, "tags": {"name": "Peak", "natural": "peak"}},
+        ]
+        result = select_best_poi(elements)
+        assert result is not None
+        assert result["type"] == "peak"
+        assert result["poi"]["name"] == "Peak"
+
+    def test_select_best_poi_returns_natural_over_industrial(self) -> None:
+        """select_best_poi should return natural when both exist."""
+        elements = [
+            {"id": 100, "tags": {"name": "Factory", "landuse": "industrial"}},
+            {"id": 200, "tags": {"name": "Park", "leisure": "park"}},
+        ]
+        result = select_best_poi(elements)
+        assert result is not None
+        assert result["type"] == "natural"
+        assert result["poi"]["name"] == "Park"
+
+    def test_select_best_poi_returns_first_by_id_on_tie(self) -> None:
+        """select_best_poi should return lowest ID when types match."""
+        elements = [
+            {"id": 200, "tags": {"name": "Second Peak", "natural": "peak"}},
+            {"id": 100, "tags": {"name": "First Peak", "natural": "peak"}},
+        ]
+        result = select_best_poi(elements)
+        assert result is not None
+        assert result["type"] == "peak"
+        assert result["poi"]["name"] == "First Peak"
+
+    def test_select_best_poi_returns_none_when_empty(self) -> None:
+        """select_best_poi should return None for empty list."""
+        result = select_best_poi([])
+        assert result is None
+
+    def test_select_best_poi_returns_none_when_no_match(self) -> None:
+        """select_best_poi should return None when no matching POI type."""
+        elements = [
+            {"id": 100, "tags": {"name": "Random POI"}},
+        ]
+        result = select_best_poi(elements)
+        assert result is None
