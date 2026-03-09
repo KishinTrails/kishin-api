@@ -49,29 +49,43 @@ else:
 
 
 class PoI:
-    def __init__(self, id: int, name: str | None):
+    def __init__(self, id: int, name: str | None, geometry: Point):
         self.id: int = id
         self.name: str = name or f"POI {id}"
+        self.geometry: Point = geometry
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
+            "geometry": self.geometry
         }
 
 
 class PeakPoI(PoI):
-    def __init__(self, id: int, name: str | None, tags):
-        self.tags = tags
-        super().__init__(id, name)
+    def __init__(self, id: int, name: str | None, geometry: Point, tags: dict):
+        super().__init__(id, name, geometry)
+        self.elevation = tags["ele"] if "ele" in tags and tags["ele"] and int(tags["ele"]) > 0 else None
+
+    def to_dict(self) -> dict[str, Any]:
+        base_dict = super().to_dict()
+        if self.elevation:
+            base_dict["elevation"] = self.elevation
+        return base_dict
 
 
-# class NaturalPoI(PoI):
-#     def __init__(self, id: int, name: str | None):
-#         super().__init__(id, name)
+class NaturalPoI(PoI):
+    def __init__(self, id: int, name: str | None, geometry: Point = None):
+        super().__init__(id, name, geometry)
+
+
+class IndustrialPoI(PoI):
+    def __init__(self, id: int, name: str | None, geometry: Point = None):
+        super().__init__(id, name, geometry)
 
 
 def transform_waypoint_to_poi(waypoint: dict) -> PoI:
+    geometry = waypoint.get("tags").get("geometry")
     tags = {
         k: sanitize_value(v)
         for k, v in waypoint.get("tags", {}).items()
@@ -80,18 +94,22 @@ def transform_waypoint_to_poi(waypoint: dict) -> PoI:
     name = tags.get("name")
 
     # Peaks
-    # if tags.get("natural") in ["peak",
-    #                            "volcano",
-    #                            "ridge",
-    #                            "arete",
-    #                            "cliff"] or tags.get("map_type") == "toposcope" or tags.get("tourism") == "viewpoint":
-    #     return PeakPoI(id=poi_id, name=name)
+    if tags.get("natural") in ["peak",
+                               "volcano",
+                               "ridge",
+                               "arete",
+                               "cliff"] or tags.get("map_type") == "toposcope" or tags.get("tourism") == "viewpoint":
+        return PeakPoI(id=poi_id, name=name, geometry=geometry, tags=tags)
 
-    # Parks
-    # if tags.get("leisure") == "park":
-    #     return NaturalPoI(id=poi_id, name=name)
+    # Natural features
+    if tags.get("leisure") == "park" or tags.get("landuse") in ["forest", "recreation_ground", "education"]:
+        return NaturalPoI(id=poi_id, name=name, geometry=geometry)
 
-    return PoI(id=poi_id, name=name)
+    # Industrial features
+    if tags.get("landuse") == "industrial":
+        return IndustrialPoI(id=poi_id, name=name, geometry=geometry)
+
+    return PoI(id=poi_id, name=name, geometry=geometry)
 
 
 def find_nearby_waypoints(gdf: gpd.GeoDataFrame, lat: float, lng: float, radius_m: float) -> List[dict[str, Any]]:
