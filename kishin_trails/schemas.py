@@ -2,6 +2,8 @@
 Pydantic schemas for data validation and serialisation.
 """
 
+from typing import List
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -45,3 +47,23 @@ class TokenData(BaseModel):
     """
 
     username: str | None = None
+
+
+class POIBase(BaseModel):
+    osm_id: int
+    name: str | None
+    lat: float
+    lon: float
+    elevation: int | None
+
+
+class POIOut(POIBase):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TileOut(BaseModel):
+    h3_cell: str
+    tile_type: str | None
+    pois: List[POIOut] = []
+
+    model_config = ConfigDict(from_attributes=True)
