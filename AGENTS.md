@@ -49,7 +49,7 @@ poetry shell
 ### Naming Conventions
 - Files: lowercase with underscores (`overpass.py`, `auth.py`)
 - Classes: PascalCase (`User`, `Base`, `Settings`)
-- Functions/variables: snake_case (`get_password_hash`, `build_bbox`)
+- Functions/variables: camelCase (`getPasswordHash`, `buildBbox`)
 - Constants: UPPER_CASE (`DATABASE_URL`, `OVERPASS_URL`)
 - Modules with "test": `test_<module>.py`
 

@@ -312,7 +312,6 @@ if router:
                 })
 
         waypoints, tileType = filterWaypointsForCache(elements)
-        print(waypoints, tileType)
 
         # Cache the results and use the cached data for response formatting to ensure consistency.
         setTile(h3Cell, tileType, waypoints)
