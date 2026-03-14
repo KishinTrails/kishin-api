@@ -17,7 +17,10 @@ TEST_PASSWORD_ALT = "somepassword"
 async def test_registration_succeeds(client: AsyncClient):
     response = await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        json={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     assert response.status_code == 200
     result = response.json()
@@ -28,11 +31,17 @@ async def test_registration_succeeds(client: AsyncClient):
 async def test_registration_fails_duplicate(client: AsyncClient):
     await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        json={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     response = await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        json={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     assert response.status_code == 400
 
@@ -41,11 +50,17 @@ async def test_registration_fails_duplicate(client: AsyncClient):
 async def test_login_succeeds(client: AsyncClient):
     await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        json={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     response = await client.post(
         "/auth/login",
-        data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        data={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     assert response.status_code == 200
     result = response.json()
@@ -56,11 +71,17 @@ async def test_login_succeeds(client: AsyncClient):
 async def test_login_fails_invalid_credentials(client: AsyncClient):
     await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        json={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     response = await client.post(
         "/auth/login",
-        data={"username": TEST_USERNAME, "password": "wrongpassword"},
+        data={
+            "username": TEST_USERNAME,
+            "password": "wrongpassword"
+        },
     )
     assert response.status_code == 401
 
@@ -75,17 +96,25 @@ async def test_protected_route_requires_auth(client: AsyncClient):
 async def test_protected_route_succeeds_with_token(client: AsyncClient):
     await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        json={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     login_res = await client.post(
         "/auth/login",
-        data={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        data={
+            "username": TEST_USERNAME,
+            "password": TEST_PASSWORD
+        },
     )
     token = login_res.json()["access_token"]
 
     response = await client.get(
         "/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
     )
     assert response.status_code == 200
     result = response.json()
@@ -97,6 +126,9 @@ async def test_protected_route_succeeds_with_token(client: AsyncClient):
 async def test_registration_is_restricted(client: AsyncClient):
     response = await client.post(
         "/auth/register",
-        json={"username": TEST_USERNAME_ALT, "password": TEST_PASSWORD_ALT},
+        json={
+            "username": TEST_USERNAME_ALT,
+            "password": TEST_PASSWORD_ALT
+        },
     )
     assert response.status_code in (403, 401)
