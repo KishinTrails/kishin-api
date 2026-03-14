@@ -96,6 +96,14 @@ def main():
 
     if args.overpass:
         bbox = build_bbox(search_lat, search_lng, radius_m)
+        south, west, north, east = bbox
+        north_west = (north, west)
+        north_east = (north, east)
+        south_west = (south, west)
+        south_east = (south, east)
+        print(f"\n--- Bounding Box ---")
+        print(f"NW/SW/NE/SE: {north_west}, {south_west}, {north_east}, {south_east}")
+
         query = build_query(bbox)
         print(f"\n--- Overpass Query ---")
         print(query)
@@ -119,4 +127,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

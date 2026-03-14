@@ -6,7 +6,7 @@ Provides API endpoints for querying nearby POIs based on location.
 
 import logging
 
-from typing import Any, List
+from typing import Any, List, Tuple
 
 try:
     from fastapi import APIRouter, HTTPException, Query, Depends
@@ -22,15 +22,13 @@ except ImportError:  # pragma: no cover
 
     JSONResponse = _DummyResponse
 
-import h3
-import geopandas as gpd
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 
+from kishin_trails.cache import getTile, setTile
 from kishin_trails.config import settings
-from kishin_trails.utils import get_h3_circle
-from kishin_trails.dependencies import get_current_user
-from kishin_trails.utils import sanitize_value
-from kishin_trails.overpass import load_elements_at
+from kishin_trails.utils import sanitizeValue, pointInH3Hexagon, getH3Circle
+from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.overpass import loadElementsAt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,56 +41,115 @@ DEFAULT_CENTER_LON = settings.DEFAULT_CENTER_LON
 DEFAULT_POI_RADIUS_M = settings.DEFAULT_POI_RADIUS_M
 
 if APIRouter:
-    router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(get_current_user)])
+    router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(getCurrentUser)])
 else:
     router = None
 
 
 class PoI:
-    def __init__(self, id: int, name: str | None, geometry: Point):
-        self.id: int = id
-        self.name: str = name or f"POI {id}"
+    """Base class for Points of Interest from OSM data.
+
+    Attributes:
+        osmId: OpenStreetMap element ID.
+        name: Name of the POI.
+        geometry: Shapely Point geometry.
+    """
+    def __init__(self, osmId: int, name: str | None, geometry: Point):
+        self.osmId = osmId
+        self.name: str = name
         self.geometry: Point = geometry
 
-    def to_dict(self) -> dict[str, Any]:
+    def toDict(self) -> dict[str, Any]:
+        """Convert POI to dictionary representation.
+        
+        Returns:
+            Dictionary with osm_id, name, and optionally lat/lon/elevation.
+        """
         result = {
-            "id": self.id,
+            "osm_id": self.osmId,
             "name": self.name,
         }
         if self.geometry is not None:
-            result["geometry"] = str(self.geometry)
+            if isinstance(self.geometry, Point):
+                result["lat"] = self.geometry.y
+                result["lon"] = self.geometry.x
+            else:
+                # FIXME: Ideally, we should return the barycenter of the geometry
+                # intersecting the hexagon. For now, we just return the centrer of
+                # the bounding box.
+                bounds = self.geometry.bounds  # (minx, miny, maxx, maxy)
+                result["lat"] = (bounds[1] + bounds[3]) / 2
+                result["lon"] = (bounds[0] + bounds[2]) / 2
         return result
 
 
 class PeakPoI(PoI):
-    def __init__(self, id: int, name: str | None, geometry: Point, tags: dict):
-        super().__init__(id, name, geometry)
+    """Point of Interest for peaks and elevated features.
+
+    Extends PoI with elevation data for mountains, volcanoes, ridges, etc.
+
+    Attributes:
+        elevation: Elevation in meters above sea level.
+    """
+    def __init__(self, osmId: int, name: str | None, geometry: Point, tags: dict):
+        super().__init__(osmId, name, geometry)
         self.elevation = tags["ele"] if "ele" in tags and tags["ele"] and int(tags["ele"]) > 0 else None
 
-    def to_dict(self) -> dict[str, Any]:
-        base_dict = super().to_dict()
+    def toDict(self) -> dict[str, Any]:
+        baseDict = super().toDict()
         if self.elevation:
-            base_dict["elevation"] = self.elevation
-        return base_dict
+            baseDict["elevation"] = self.elevation
+        return baseDict
 
 
 class NaturalPoI(PoI):
-    def __init__(self, id: int, name: str | None, geometry: Point = None):
-        super().__init__(id, name, geometry)
+    """Point of Interest for natural features like parks and forests.
+
+    Represents leisure and landuse areas such as parks, forests, and
+    recreation grounds.
+    """
+    def __init__(self, osmId: int, name: str | None, geometry: Point = None):
+        """Initialize Natural POI.
+        
+        Args:
+            osmId: OpenStreetMap element ID.
+            name: Name of the POI.
+            geometry: Shapely Point geometry.
+        """
+        super().__init__(osmId, name, geometry)
 
 
 class IndustrialPoI(PoI):
-    def __init__(self, id: int, name: str | None, geometry: Point = None):
-        super().__init__(id, name, geometry)
+    """Point of Interest for industrial landuse areas.
+
+    Represents industrial zones and facilities from OSM data.
+    """
+    def __init__(self, osmId: int, name: str | None, geometry: Point = None):
+        """Initialize Industrial POI.
+        
+        Args:
+            osmId: OpenStreetMap element ID.
+            name: Name of the POI.
+            geometry: Shapely Point geometry.
+        """
+        super().__init__(osmId, name, geometry)
 
 
-def transform_waypoint_to_poi(waypoint: dict) -> PoI:
+def transformWaypointToPoi(waypoint: dict) -> PoI:
+    """Transform OSM waypoint to POI instance.
+    
+    Args:
+        waypoint: Dictionary with 'id' and 'tags' from OSM data.
+        
+    Returns:
+        PoI, PeakPoI, NaturalPoI, or IndustrialPoI instance based on tags.
+    """
     geometry = waypoint.get("tags").get("geometry")
     tags = {
-        k: sanitize_value(v)
+        k: sanitizeValue(v)
         for k, v in waypoint.get("tags", {}).items()
     }
-    poi_id = waypoint.get("id")
+    poiId = waypoint.get("id")
     name = tags.get("name")
 
     # Peaks
@@ -101,188 +158,163 @@ def transform_waypoint_to_poi(waypoint: dict) -> PoI:
                                "ridge",
                                "arete",
                                "cliff"] or tags.get("map_type") == "toposcope" or tags.get("tourism") == "viewpoint":
-        return PeakPoI(id=poi_id, name=name, geometry=geometry, tags=tags)
+        return PeakPoI(osmId=poiId, name=name, geometry=geometry, tags=tags)
 
     # Natural features
     if tags.get("leisure") == "park" or tags.get("landuse") in ["forest", "recreation_ground", "education"]:
-        return NaturalPoI(id=poi_id, name=name, geometry=geometry)
+        return NaturalPoI(osmId=poiId, name=name, geometry=geometry)
 
     # Industrial features
     if tags.get("landuse") == "industrial":
-        return IndustrialPoI(id=poi_id, name=name, geometry=geometry)
+        return IndustrialPoI(osmId=poiId, name=name, geometry=geometry)
 
-    return PoI(id=poi_id, name=name, geometry=geometry)
+    return PoI(osmId=poiId, name=name, geometry=geometry)
 
 
-def select_best_poi(elements: List[dict]) -> dict | None:
-    """Select the best POI from a list of elements based on priority.
-    
+def filterWaypointsForCache(elements: List[dict]) -> Tuple[List[dict], str | None]:
+    """Filter waypoints for caching, selecting all POIs of the best type.
+
     Priority: PeakPoI > NaturalPoI > IndustrialPoI
-    Tie-breaker: Lowest ID first
-    
+
     Args:
         elements: List of element dicts with 'id' and 'tags'.
-        
+
     Returns:
-        Dict with 'type' (poi type string) and 'poi' (poi data dict), or None if no match.
+        Tuple of (selected_waypoints: List[dict], selected_type: str | None)
     """
     if not elements:
-        return None
+        return [], None
 
-    # Convert all elements to PoI objects
     pois = []
     for elem in elements:
         waypoint = {
             "id": elem.get("id"),
             "tags": elem.get("tags",
-                             {})
+                             {}),
         }
-        poi = transform_waypoint_to_poi(waypoint)
+        poi = transformWaypointToPoi(waypoint)
         pois.append(poi)
 
-    # Apply priority: Peak > Natural > Industrial
-    for ptype_class in [PeakPoI, NaturalPoI, IndustrialPoI]:
-        matching = [p for p in pois if isinstance(p, ptype_class)]
-        if matching:
-            # Sort by ID and return first
-            matching.sort(key=lambda p: p.id)
-            selected = matching[0]
-            type_name = ptype_class.__name__.replace("PoI", "").lower()
-            return {
-                "type": type_name,
-                "poi": selected.to_dict()
-            }
+    # Peaks have highest priority. First filter for peaks.
+    peaks = [p for p in pois if isinstance(p, PeakPoI) and p.name]
+    if len(peaks) == 1:
+        return [peaks[0].toDict()], "peak"
+    if len(peaks) > 1:
+        # Multiple peaks found, choose the one with highest elevation.
+        peaks = sorted(peaks, key=lambda p: -int(p.elevation) if p.elevation is not None else p.osmId)
+        return [peaks[0].toDict()], "peak"
 
-    return None
+    # If no peaks, look for natural features.
+    if any(isinstance(p, NaturalPoI) for p in pois):
+        return [], "natural"
+
+    # If no natural features, look for industrial features.
+    if any(isinstance(p, IndustrialPoI) for p in pois):
+        return [], "industrial"
+
+    return [], None
 
 
-def find_nearby_waypoints(gdf: gpd.GeoDataFrame, lat: float, lng: float, radius_m: float) -> List[dict[str, Any]]:
-    if gdf.empty:
-        return []
-
-    pois = []
-    for _, row in gdf.iterrows():
-        waypoint = {
-            "id": row["id"],
-            "tags": {
-                k: v
-                for k, v in row.items()
+def formatPoiFromCache(cachedTile: dict, h3Cell: str, lat: float, lng: float) -> dict:
+    """Format cached POI data for API response."""
+    pois = cachedTile.get("pois", [])
+    if not pois:
+        return {
+            "h3_cell": h3Cell,
+            "type": cachedTile.get("tile_type"),
+            "center": {
+                "lat": lat,
+                "lng": lng
             },
+            "count": 0
         }
-        poi = transform_waypoint_to_poi(waypoint)
-        pois.append(poi.to_dict())
 
-    return pois
+    poiData = pois[0]
+    return {
+        "h3_cell": h3Cell,
+        "type": cachedTile.get("tile_type"),
+        "center": {
+            "lat": lat,
+            "lng": lng
+        },
+        "count": len(pois),
+        "poi":
+            {
+                "id": poiData.get("osm_id"),
+                "name": poiData.get("name"),
+                "geometry": Point(
+                    poiData.get(
+                        "lon",
+                        lng,
+                    ),
+                    poiData.get(
+                        "lat",
+                        lat,
+                    ),
+                ).wkt,
+                "elevation": poiData.get("elevation")
+            }
+    }
 
 
 if router:
-
-    @router.get(
-        "/",
-        summary="Get all POIs",
-        response_class=JSONResponse,
-        deprecated=True,
-    )
-    def get_all_pois():
-        gdf = load_elements_at(DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON, DEFAULT_POI_RADIUS_M)
-        pois = find_nearby_waypoints(gdf, DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON, DEFAULT_POI_RADIUS_M)
-
-        return JSONResponse(
-            content={
-                "type": "FeatureCollection",
-                "count": len(pois),
-                "radius_m": DEFAULT_POI_RADIUS_M,
-                "center": {
-                    "lat": DEFAULT_CENTER_LAT,
-                    "lng": DEFAULT_CENTER_LON
-                },
-                "features": pois,
-            }
-        )
-
-    @router.get(
-        "/nearby",
-        summary="Get nearby POIs",
-        response_class=JSONResponse,
-    )
-    def get_nearby_pois(
-        h3_cell: str = Query(...,
-                             description="H3 hexagonal cell identifier (e.g., '851f9633fffffff')."),
-        parent_level: int = Query(
-            0,
-            ge=0,
-            le=5,
-            description="Level of parent cell to search. 0 = current cell, 1 = first parent, etc.",
-        ),
-    ):
-        try:
-            lat, lng, radius_m, search_cell = get_h3_circle(h3_cell, parent_level)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        gdf = load_elements_at(lat, lng, radius_m)
-        pois = find_nearby_waypoints(gdf, lat, lng, radius_m)
-
-        return JSONResponse(
-            content={
-                "type": "FeatureCollection",
-                "count": len(pois),
-                "radius_m": radius_m,
-                "center": {
-                    "lat": lat,
-                    "lng": lng
-                },
-                "h3_cell": h3_cell,
-                "parent_level": parent_level,
-                "search_cell": search_cell,
-                "features": pois,
-            }
-        )
 
     @router.get(
         "/bycell",
         summary="Get POI for a single H3 cell",
         response_class=JSONResponse,
     )
-    def get_poi_by_cell(
-        h3_cell: str = Query(...,
-                             description="H3 hexagonal cell identifier (e.g., '851f9633fffffff').")
-    ):
+    def getPoiByCell(h3Cell: str = Query(
+        ...,
+        description="H3 hexagonal cell identifier (e.g., '851f9633fffffff').",
+    )):
+        """Get POI data for a specific H3 cell.
+        
+        Args:
+            h3Cell: H3 cell identifier.
+            
+        Returns:
+            JSON response with POI data for the cell.
+            
+        Raises:
+            HTTPException 400: If the H3 cell is invalid.
+        """
         try:
-            lat, lng, radius_m, _ = get_h3_circle(h3_cell, 0)
+            lat, lng, radiusM, _ = getH3Circle(h3Cell, 0)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        gdf = load_elements_at(lat, lng, radius_m)
+        cached = getTile(h3Cell)
+        if cached:
+            return JSONResponse(content=formatPoiFromCache(cached, h3Cell, lat, lng))
+
+        gdf = loadElementsAt(lat, lng, radiusM)
 
         elements = []
         for _, row in gdf.iterrows():
-            elements.append({
-                "id": row["id"],
-                "tags": dict(row.items())
-            })
+            tags = dict(row.items())
+            geometry = tags.get("geometry")
+            if geometry is not None and isinstance(geometry,
+                                                   Point) and not pointInH3Hexagon(geometry.y,
+                                                                                   geometry.x,
+                                                                                   h3Cell):
+                # Discard points that are outside the hexagon boundary.
+                pass
+            elif False:  # FIXME: Placeholder for future polygon handling.
+                # In case polygon is in the bounding box but does not intersect
+                # the hexagon, we should discard it. This requires more complex
+                # geometry checks.
+                pass
+            else:
+                elements.append({
+                    "id": row["id"],
+                    "tags": dict(row.items())
+                })
 
-        result = select_best_poi(elements)
+        waypoints, tileType = filterWaypointsForCache(elements)
+        print(waypoints, tileType)
 
-        if result is None:
-            return JSONResponse(content={
-                "h3_cell": h3_cell,
-                "center": {
-                    "lat": lat,
-                    "lng": lng
-                },
-                "count": 0
-            })
-
-        return JSONResponse(
-            content={
-                "h3_cell": h3_cell,
-                "center": {
-                    "lat": lat,
-                    "lng": lng
-                },
-                "type": result["type"],
-                "count": 1,
-                "poi": result["poi"]
-            }
-        )
+        # Cache the results and use the cached data for response formatting to ensure consistency.
+        setTile(h3Cell, tileType, waypoints)
+        cached = getTile(h3Cell)
+        return JSONResponse(content=formatPoiFromCache(cached, h3Cell, lat, lng))

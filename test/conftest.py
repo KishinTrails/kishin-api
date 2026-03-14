@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from kishin_trails.main import app
-from kishin_trails.database import Base, get_db
+from kishin_trails.database import Base, getDb
 
 # --- Test Database Setup ---
 # We still use in-memory for speed in the fixtures, 
@@ -57,7 +57,7 @@ async def client(db_session):
         finally:
             pass
 
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[getDb] = override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

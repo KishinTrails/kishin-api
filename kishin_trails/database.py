@@ -11,25 +11,27 @@ SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # connect_args={"check_same_thread": False} is required only for SQLite.
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={
+        "check_same_thread": False
+    }
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SESSION_LOCAL = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
     """
     Base class for SQLAlchemy models.
     """
-    pass
 
 
-def get_db():
+def getDb():
     """
     Dependency to get a database session.
     Yields a session and ensures it's closed after the request.
     """
-    db = SessionLocal()
+    dbSession = SESSION_LOCAL()
     try:
-        yield db
+        yield dbSession
     finally:
-        db.close()
+        dbSession.close()

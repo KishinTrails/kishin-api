@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from kishin_trails.database import engine, Base
 from kishin_trails.auth import router as auth_router
-from kishin_trails.overpass import router as overpass_router
 from kishin_trails.poi import router as poi_router
-from kishin_trails.dependencies import get_current_user
+from kishin_trails.cache import initDb as initCacheDb
+from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
 
 
@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
     Creates database tables on startup.
     """
     Base.metadata.create_all(bind=engine)
+    initCacheDb()
     yield
 
 
@@ -31,12 +32,11 @@ app = FastAPI(
 
 # Include routers
 app.include_router(auth_router)
-app.include_router(overpass_router)
 app.include_router(poi_router)
 
 
 @app.get("/", summary="Root endpoint")
-def read_root():
+def readRoot():
     """
     Public root endpoint to verify the API is running.
     """
@@ -46,13 +46,13 @@ def read_root():
 
 
 @app.get("/me", summary="Get current user info")
-def read_users_me(current_user: User = Depends(get_current_user)):
+def readUsersMe(currentUser: User = Depends(getCurrentUser)):
     """
     Guarded endpoint to return the currently authenticated user's information.
     """
     return {
-        "username": current_user.username,
-        "id": current_user.id
+        "username": currentUser.username,
+        "id": currentUser.id
     }
 
 

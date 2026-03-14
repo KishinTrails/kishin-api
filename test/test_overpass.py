@@ -21,11 +21,11 @@ from kishin_trails.overpass import (
     DEFAULT_CENTER_LAT,
     DEFAULT_CENTER_LON,
     DEFAULT_OVERPASS_RADIUS_M,
-    build_bbox,
-    run_overpass,
-    osm_to_geodataframes,
-    reconstruct_multipolygons,
-    remove_ways_inside_relations,
+    buildBbox,
+    runOverpass,
+    osmToGeoDataFrames,
+    reconstructMultipolygons,
+    removeWaysInsideRelations,
 )
 
 
@@ -86,7 +86,7 @@ def build_overpass_json(nodes: list[dict], ways: list[dict], relations: list[dic
 # -----------------------------------------------------------------
 # 3️⃣  Fixtures ----------------------------------------------------
 # -----------------------------------------------------------------
-# Cache directory tests use tmp_path parameter directly via cache_dir argument.
+# Cache directory tests use tmp_path parameter directly via cacheDir argument.
 
 @pytest.mark.parametrize(
     "lat, lon, radius, expected",
@@ -101,8 +101,8 @@ def build_overpass_json(nodes: list[dict], ways: list[dict], relations: list[dic
         (45.0, 10.0, 2_000, None),   # we will compute the expected values inside the test
     ],
 )
-def test_build_bbox_basic(lat, lon, radius, expected):
-    bbox = build_bbox(lat, lon, radius)
+def test_buildBbox_basic(lat, lon, radius, expected):
+    bbox = buildBbox(lat, lon, radius)
 
     # Basic ordering invariant
     south, west, north, east = bbox
@@ -115,7 +115,7 @@ def test_build_bbox_basic(lat, lon, radius, expected):
             assert abs(a - b) < 1e-6
 
 
-def test_run_overpass_makes_request_and_caches_result(tmp_path: Path, monkeypatch):
+def test_runOverpass_makes_request_and_caches_result(tmp_path: Path, monkeypatch):
     query = "[out:json];node(50,10,1);out;"
 
     # Expected JSON that the mocked Overpass API will return
@@ -139,9 +139,9 @@ def test_run_overpass_makes_request_and_caches_result(tmp_path: Path, monkeypatc
     monkeypatch.setattr(requests, "post", mock_post)
 
     # ----------------------------------------------------------------------
-    # 2️⃣ Call the function under test with custom cache_dir
+    # 2️⃣ Call the function under test with custom cacheDir
     # ----------------------------------------------------------------------
-    result = run_overpass(query, cache_dir=tmp_path)
+    result = runOverpass(query, cacheDir=tmp_path)
 
     # ----------------------------------------------------------------------
     # 3️⃣ Assertions
@@ -164,7 +164,7 @@ def test_run_overpass_makes_request_and_caches_result(tmp_path: Path, monkeypatc
     assert cached == fake_response
 
 
-def test_run_overpass_uses_cache_when_available(tmp_path: Path, monkeypatch):
+def test_runOverpass_uses_cache_when_available(tmp_path: Path, monkeypatch):
     query = "[out:json];node(50,10,1);out;"
     hash_key = hashlib.md5(query.encode()).hexdigest()
     cache_file = tmp_path / f"{hash_key}.json"
@@ -183,14 +183,14 @@ def test_run_overpass_uses_cache_when_available(tmp_path: Path, monkeypatch):
     mock_post = mock.Mock()
     monkeypatch.setattr(requests, "post", mock_post)
 
-    # Call the function with custom cache_dir – it should hit the cache and never invoke `post`
-    result = run_overpass(query, cache_dir=tmp_path)
+    # Call the function with custom cacheDir – it should hit the cache and never invoke `post`
+    result = runOverpass(query, cacheDir=tmp_path)
 
     assert result == cached_data
     mock_post.assert_not_called()
 
 
-def test_run_overpass_raises_on_http_error(tmp_path: Path, monkeypatch):
+def test_runOverpass_raises_on_http_error(tmp_path: Path, monkeypatch):
     query = "[out:json];node(50,10,1);out;"
 
     # Mock a response that raises HTTPError when `raise_for_status` is called
@@ -199,7 +199,7 @@ def test_run_overpass_raises_on_http_error(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(requests, "post", mock.Mock(return_value=mock_resp))
 
     with pytest.raises(requests.HTTPError):
-        run_overpass(query, cache_dir=tmp_path)
+        runOverpass(query, cacheDir=tmp_path)
 
     # No cache file should have been created
     hash_key = hashlib.md5(query.encode()).hexdigest()
@@ -219,9 +219,9 @@ def test_cache_key_is_md5_of_query():
 
 
 # -----------------------------------------------------------------
-# 4️⃣  Tests for ``osm_to_geodataframes``
+# 4️⃣  Tests for ``osmToGeoDataFrames``
 # -----------------------------------------------------------------
-def test_osm_to_geodataframes_basic_closed_and_open_ways():
+def test_osmToGeoDataFrames_basic_closed_and_open_ways():
     """
     One closed way → Polygon, one open way → LineString.
     All tags must become columns; missing tags are NaN.
@@ -253,7 +253,7 @@ def test_osm_to_geodataframes_basic_closed_and_open_ways():
     # No relations for this test.
     json_blob = build_overpass_json(nodes, ways, [])
 
-    ways_gdf, rels_gdf, nodes_gdf = osm_to_geodataframes(json_blob)
+    ways_gdf, rels_gdf, nodes_gdf = osmToGeoDataFrames(json_blob)
 
     # ---- Assertions on the ways GeoDataFrame -----------------
     assert isinstance(ways_gdf, gpd.GeoDataFrame)
@@ -274,7 +274,7 @@ def test_osm_to_geodataframes_basic_closed_and_open_ways():
     assert rels_gdf.empty  # no relations in the payload
 
 
-def test_osm_to_geodataframes_degenerate_way_is_discarded():
+def test_osmToGeoDataFrames_degenerate_way_is_discarded():
     """A way with < 2 resolvable nodes should not appear in the result."""
     NODE_ID = 1
     WAY_ID = 20
@@ -284,25 +284,25 @@ def test_osm_to_geodataframes_degenerate_way_is_discarded():
     ways = [make_way(WAY_ID, [NODE_ID], tags=WAY_TAGS)]  # degenerate way
     json_blob = build_overpass_json(nodes, ways, [])
 
-    ways_gdf, _, _ = osm_to_geodataframes(json_blob)
+    ways_gdf, _, _ = osmToGeoDataFrames(json_blob)
 
     # The degenerate way must be filtered out.
     assert ways_gdf.empty
 
 
-def test_osm_to_geodataframes_relations_have_none_geometry():
+def test_osmToGeoDataFrames_relations_have_none_geometry():
     """Relations are returned with geometry == None (as documented)."""
     REL_ID = 30
     rel = make_relation(REL_ID, outer_way_ids=[])
     json_blob = build_overpass_json([], [], [rel])
 
-    _, rels_gdf, _ = osm_to_geodataframes(json_blob)
+    _, rels_gdf, _ = osmToGeoDataFrames(json_blob)
 
     assert len(rels_gdf) == 1
     assert rels_gdf.loc[rels_gdf["id"] == REL_ID, "geometry"].iloc[0] is None
 
 
-def test_osm_to_geodataframes_nodes_have_point_geometry():
+def test_osmToGeoDataFrames_nodes_have_point_geometry():
     """Nodes should be returned with Point geometry and correct coordinates."""
     nodes = [
         make_node(100, 45.0, 2.0),
@@ -310,7 +310,7 @@ def test_osm_to_geodataframes_nodes_have_point_geometry():
     ]
     json_blob = build_overpass_json(nodes, [], [])
 
-    _, _, nodes_gdf = osm_to_geodataframes(json_blob)
+    _, _, nodes_gdf = osmToGeoDataFrames(json_blob)
 
     assert len(nodes_gdf) == 2
     assert nodes_gdf.iloc[0].geometry.geom_type == "Point"
@@ -320,13 +320,13 @@ def test_osm_to_geodataframes_nodes_have_point_geometry():
     assert nodes_gdf.iloc[1].geometry.y == 45.1
 
 
-def test_osm_to_geodataframes_nodes_with_tags():
+def test_osmToGeoDataFrames_nodes_with_tags():
     """Node tags should be preserved as columns in the GeoDataFrame."""
     node = make_node(100, 45.0, 2.0)
     node["tags"] = {"name": "Test Peak", "tourism": "viewpoint"}
     json_blob = build_overpass_json([node], [], [])
 
-    _, _, nodes_gdf = osm_to_geodataframes(json_blob)
+    _, _, nodes_gdf = osmToGeoDataFrames(json_blob)
 
     assert len(nodes_gdf) == 1
     assert nodes_gdf.iloc[0]["name"] == "Test Peak"
@@ -334,9 +334,9 @@ def test_osm_to_geodataframes_nodes_with_tags():
 
 
 # -----------------------------------------------------------------
-# 5️⃣  Tests for ``reconstruct_multipolygons``
+# 5️⃣  Tests for ``reconstructMultipolygons``
 # -----------------------------------------------------------------
-def test_reconstruct_multipolygons_single_closed_outer():
+def test_reconstructMultipolygons_single_closed_outer():
     """
     One outer way that already forms a closed ring → a single Polygon.
     """
@@ -356,14 +356,14 @@ def test_reconstruct_multipolygons_single_closed_outer():
 
     json_blob = build_overpass_json(nodes, [way], [rel])
 
-    polys = reconstruct_multipolygons(json_blob)
+    polys = reconstructMultipolygons(json_blob)
 
     assert isinstance(polys, list)
     assert len(polys) == 1
     assert isinstance(polys[0], geom.Polygon)
 
 
-def test_reconstruct_multipolygons_multiple_outers_need_stitching():
+def test_reconstructMultipolygons_multiple_outers_need_stitching():
     """
     Two half‑circles that share an endpoint must be stitched together
     before polygonisation.
@@ -389,14 +389,14 @@ def test_reconstruct_multipolygons_multiple_outers_need_stitching():
 
     json_blob = build_overpass_json(nodes, [way10, way11], [rel])
 
-    polys = reconstruct_multipolygons(json_blob)
+    polys = reconstructMultipolygons(json_blob)
 
     # The two ways should be merged into a single outer ring → one Polygon.
     assert len(polys) == 1
     assert isinstance(polys[0], geom.Polygon)
 
 
-def test_reconstruct_multipolygons_ignores_inner_ways():
+def test_reconstructMultipolygons_ignores_inner_ways():
     """
     Relations that contain inner members must be built from the outer
     members only – inner ways are deliberately ignored (see source).
@@ -454,7 +454,7 @@ def test_reconstruct_multipolygons_ignores_inner_ways():
         relations=[rel],
     )
 
-    polys = reconstruct_multipolygons(json_blob)
+    polys = reconstructMultipolygons(json_blob)
 
     # Only the outer ring should survive → a single Polygon.
     assert len(polys) == 1
@@ -463,7 +463,7 @@ def test_reconstruct_multipolygons_ignores_inner_ways():
     assert len(polys[0].interiors) == 0
 
 
-def test_reconstruct_multipolygons_missing_way_is_skipped():
+def test_reconstructMultipolygons_missing_way_is_skipped():
     """
     If a relation refers to a way ID that does not exist in the JSON,
     the function must simply ignore that member and still return any
@@ -507,7 +507,7 @@ def test_reconstruct_multipolygons_missing_way_is_skipped():
 
     json_blob = build_overpass_json(nodes, [valid_way], [rel])
 
-    polys = reconstruct_multipolygons(json_blob)
+    polys = reconstructMultipolygons(json_blob)
 
     # The missing way must not cause a crash; we still get one Polygon.
     assert len(polys) == 1
@@ -515,9 +515,9 @@ def test_reconstruct_multipolygons_missing_way_is_skipped():
 
 
 # -----------------------------------------------------------------
-# 6️⃣  Tests for ``remove_ways_inside_relations``
+# 6️⃣  Tests for ``removeWaysInsideRelations``
 # -----------------------------------------------------------------
-def test_remove_ways_inside_relations_basic():
+def test_removeWaysInsideRelations_basic():
     """
     A LineString that lies completely inside a Polygon relation should be
     removed, while a line that merely touches or crosses the polygon stays.
@@ -555,14 +555,14 @@ def test_remove_ways_inside_relations_basic():
         crs="EPSG:4326",
     )
 
-    filtered = remove_ways_inside_relations(ways_gdf, rels_gdf)
+    filtered = removeWaysInsideRelations(ways_gdf, rels_gdf)
 
     # Only the crossing line must survive.
     assert len(filtered) == 1
     assert filtered.iloc[0]["id"] == WAY_11_ID
 
 
-def test_remove_ways_inside_relations_no_relations():
+def test_removeWaysInsideRelations_no_relations():
     """
     When there are no relation polygons, the function must return the
     original ``ways_gdf`` unchanged.
@@ -583,12 +583,12 @@ def test_remove_ways_inside_relations_no_relations():
     )
     empty_rels = gpd.GeoDataFrame(columns=["id", "geometry"], crs="EPSG:4326")
 
-    result = remove_ways_inside_relations(ways, empty_rels)
+    result = removeWaysInsideRelations(ways, empty_rels)
 
     pd.testing.assert_frame_equal(result.sort_index(), ways.sort_index())
 
 
-def test_remove_ways_inside_relations_crs_mismatch_raises():
+def test_removeWaysInsideRelations_crs_mismatch_raises():
     """
     The function should raise a clear error when the two GeoDataFrames have
     different CRS objects (otherwise spatial predicates would be meaningless).
@@ -614,7 +614,7 @@ def test_remove_ways_inside_relations_crs_mismatch_raises():
     )
 
     with pytest.raises(ValueError, match="CRS"):
-        remove_ways_inside_relations(ways, rels)
+        removeWaysInsideRelations(ways, rels)
 
 
 # -----------------------------------------------------------------
@@ -654,16 +654,16 @@ def test_full_pipeline_multipolygon_and_way_filtering():
     json_blob = build_overpass_json(nodes, [outer_way, inner_line], [rel])
 
     # ----- Step 1: parse -------------------------------------------------
-    ways_gdf, rels_gdf, nodes_gdf = osm_to_geodataframes(json_blob)
+    ways_gdf, rels_gdf, nodes_gdf = osmToGeoDataFrames(json_blob)
 
     # ----- Step 2: build multipolygon geometry ----------------------------
-    polys = reconstruct_multipolygons(json_blob)
+    polys = reconstructMultipolygons(json_blob)
     assert len(polys) == 1
     rels_gdf = rels_gdf.copy()
     rels_gdf.loc[rels_gdf["id"] == RELATION_ID, "geometry"] = polys[0]
 
     # ----- Step 3: filter ways -------------------------------------------
-    filtered = remove_ways_inside_relations(ways_gdf, rels_gdf)
+    filtered = removeWaysInsideRelations(ways_gdf, rels_gdf)
 
     # The diagonal line lies completely inside the square, so it must be gone.
     assert filtered.empty
@@ -672,13 +672,13 @@ def test_full_pipeline_multipolygon_and_way_filtering():
 # -----------------------------------------------------------------
 # 8️⃣  Edge case: empty ways
 # -----------------------------------------------------------------
-def test_osm_to_geodataframes_returns_empty_gdf_when_no_ways(tmp_path):
+def test_osmToGeoDataFrames_returns_empty_gdf_when_no_ways(tmp_path):
     """
     When there are no ways in the OSM JSON, the function returns empty
     GeoDataFrames.
     """
     json_blob = build_overpass_json([], [], [])
-    ways_gdf, rels_gdf, nodes_gdf = osm_to_geodataframes(json_blob)
+    ways_gdf, rels_gdf, nodes_gdf = osmToGeoDataFrames(json_blob)
 
     assert ways_gdf.empty
     assert rels_gdf.empty

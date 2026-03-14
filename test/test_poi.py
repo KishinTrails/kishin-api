@@ -7,46 +7,46 @@ from typing import Any
 import pytest
 from shapely.geometry import Point
 
-from kishin_trails.poi import IndustrialPoI, NaturalPoI, PeakPoI, PoI, select_best_poi, transform_waypoint_to_poi
+from kishin_trails.poi import IndustrialPoI, NaturalPoI, PeakPoI, PoI, filterWaypointsForCache, transformWaypointToPoi
 
 
 class TestPoI:
     """Tests for the PoI base class."""
     def test_poi_initializes_with_id_and_name(self) -> None:
         """PoI should initialize with provided id and name."""
-        expected_id = 123
+        expectedOsmId = 123
         expected_name = "Test POI"
-        poi = PoI(id=expected_id, name=expected_name, geometry=None)
-        assert poi.id == expected_id
+        poi = PoI(osmId=expectedOsmId, name=expected_name, geometry=None)
+        assert poi.osmId == expectedOsmId
         assert poi.name == expected_name
 
     def test_poi_default_name_when_none(self) -> None:
-        """PoI should use default name when name is None."""
-        expected_id = 456
-        poi = PoI(id=expected_id, name=None, geometry=None)
-        assert poi.id == expected_id
-        assert poi.name == f"POI {expected_id}"
+        """PoI should not use default name when name is None."""
+        expectedOsmId = 456
+        poi = PoI(osmId=expectedOsmId, name=None, geometry=None)
+        assert poi.osmId == expectedOsmId
+        assert poi.name == None
 
-    def test_poi_to_dict_returns_correct_dict(self) -> None:
-        """PoI.to_dict() should return a dict with correct attributes."""
-        expected_id = 789
+    def test_poi_toDict_returns_correct_dict(self) -> None:
+        """PoI.toDict() should return a dict with correct attributes."""
+        expectedOsmId = 789
         expected_name = "Another POI"
-        poi = PoI(id=expected_id, name=expected_name, geometry=None)
-        result = poi.to_dict()
+        poi = PoI(osmId=expectedOsmId, name=expected_name, geometry=None)
+        result = poi.toDict()
         assert isinstance(result, dict)
-        assert result["id"] == expected_id
+        assert result["osm_id"] == expectedOsmId
         assert result["name"] == expected_name
 
-    def test_poi_to_dict_is_json_serializable(self) -> None:
-        """PoI.to_dict() should produce JSON-serializable output."""
-        expected_id = 111
+    def test_poi_toDict_is_json_serializable(self) -> None:
+        """PoI.toDict() should produce JSON-serializable output."""
+        expectedOsmId = 111
         expected_name = "JSON POI"
-        poi = PoI(id=expected_id, name=expected_name, geometry=None)
-        result = poi.to_dict()
+        poi = PoI(osmId=expectedOsmId, name=expected_name, geometry=None)
+        result = poi.toDict()
         json_str = json.dumps(result)
         assert json_str is not None
         parsed = json.loads(json_str)
-        assert parsed["id"] == expected_id
+        assert parsed["osm_id"] == expectedOsmId
         assert parsed["name"] == expected_name
 
 
@@ -55,28 +55,30 @@ class TestPoIGeometry:
     def test_poi_with_geometry_point(self) -> None:
         """PoI should store geometry when provided as Point."""
         expected_geometry = Point(2.0, 45.0)
-        poi = PoI(id=1, name="Test", geometry=expected_geometry)
+        poi = PoI(osmId=1, name="Test", geometry=expected_geometry)
         assert poi.geometry == expected_geometry
         assert poi.geometry.x == 2.0
         assert poi.geometry.y == 45.0
 
     def test_poi_with_geometry_none(self) -> None:
         """PoI should handle geometry=None."""
-        poi = PoI(id=1, name="Test", geometry=None)
+        poi = PoI(osmId=1, name="Test", geometry=None)
         assert poi.geometry is None
 
-    def test_poi_to_dict_includes_geometry(self) -> None:
-        """PoI.to_dict() should include geometry when present."""
+    def test_poi_toDict_includes_geometry(self) -> None:
+        """PoI.toDict() should include geometry when present."""
         expected_geometry = Point(3.0, 46.0)
-        poi = PoI(id=1, name="Test", geometry=expected_geometry)
-        result = poi.to_dict()
-        assert "geometry" in result
-        assert "POINT" in result["geometry"]
+        poi = PoI(osmId=1, name="Test", geometry=expected_geometry)
+        result = poi.toDict()
+        assert "lat" in result
+        assert "lon" in result
+        assert result["lat"] == expected_geometry.y
+        assert result["lon"] == expected_geometry.x
 
-    def test_poi_to_dict_excludes_geometry_when_none(self) -> None:
-        """PoI.to_dict() should handle geometry=None."""
-        poi = PoI(id=1, name="Test", geometry=None)
-        result = poi.to_dict()
+    def test_poi_toDict_excludes_geometry_when_none(self) -> None:
+        """PoI.toDict() should handle geometry=None."""
+        poi = PoI(osmId=1, name="Test", geometry=None)
+        result = poi.toDict()
         assert "geometry" not in result
 
     def test_peakpoi_with_geometry(self) -> None:
@@ -87,10 +89,11 @@ class TestPoIGeometry:
                 "name": "Mont Blanc",
                 "natural": "peak",
                 "ele": "4808",
-                "geometry": Point(2.0, 45.0),
+                "geometry": Point(2.0,
+                                  45.0),
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert result.geometry is not None
         assert result.geometry.x == 2.0
@@ -103,10 +106,11 @@ class TestPoIGeometry:
             "tags": {
                 "name": "Central Park",
                 "leisure": "park",
-                "geometry": Point(3.0, 46.0),
+                "geometry": Point(3.0,
+                                  46.0),
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
         assert result.geometry is not None
         assert result.geometry.x == 3.0
@@ -118,80 +122,81 @@ class TestPoIGeometry:
             "tags": {
                 "name": "Factory",
                 "landuse": "industrial",
-                "geometry": Point(4.0, 47.0),
+                "geometry": Point(4.0,
+                                  47.0),
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, IndustrialPoI)
         assert result.geometry is not None
         assert result.geometry.x == 4.0
 
 
 class TestTransformWaypointToPoi:
-    """Tests for the transform_waypoint_to_poi factory function."""
-    def test_transform_waypoint_to_poi_returns_poi_instance(self) -> None:
-        """transform_waypoint_to_poi should return a PoI instance."""
+    """Tests for the transformWaypointToPoi factory function."""
+    def test_transformWaypointToPoi_returns_poi_instance(self) -> None:
+        """transformWaypointToPoi should return a PoI instance."""
         waypoint = {
             "id": 1,
             "tags": {
                 "name": "Test"
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PoI)
-        assert result.id == waypoint["id"]
+        assert result.osmId == waypoint["id"]
         assert result.name == waypoint["tags"]["name"]
 
-    def test_transform_waypoint_to_poi_with_normal_name(self) -> None:
-        """transform_waypoint_to_poi should preserve normal name."""
+    def test_transformWaypointToPoi_with_normal_name(self) -> None:
+        """transformWaypointToPoi should preserve normal name."""
         waypoint = {
             "id": 123,
             "tags": {
                 "name": "Mountain Peak"
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
-        assert result.id == waypoint["id"]
+        result = transformWaypointToPoi(waypoint)
+        assert result.osmId == waypoint["id"]
         assert result.name == waypoint["tags"]["name"]
 
-    def test_transform_waypoint_to_poi_with_empty_tags(self) -> None:
-        """transform_waypoint_to_poi should handle empty tags."""
+    def test_transformWaypointToPoi_with_empty_tags(self) -> None:
+        """transformWaypointToPoi should handle empty tags."""
         waypoint = {
             "id": 456,
             "tags": {}
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PoI)
-        assert result.id == waypoint["id"]
-        assert result.name == f"POI {waypoint['id']}"
+        assert result.osmId == waypoint["id"]
+        assert result.name == None
 
-    def test_transform_waypoint_to_poi_with_nan_name(self) -> None:
-        """transform_waypoint_to_poi should handle NaN name."""
+    def test_transformWaypointToPoi_with_nan_name(self) -> None:
+        """transformWaypointToPoi should handle NaN name."""
         waypoint = {
             "id": 789,
             "tags": {
                 "name": float("nan")
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PoI)
-        assert result.id == waypoint["id"]
-        assert result.name == f"POI {waypoint['id']}"
+        assert result.osmId == waypoint["id"]
+        assert result.name == None
 
-    def test_transform_waypoint_to_poi_to_dict_is_json_serializable(self) -> None:
-        """transform_waypoint_to_poi result should be JSON serializable."""
+    def test_transformWaypointToPoi_toDict_is_json_serializable(self) -> None:
+        """transformWaypointToPoi result should be JSON serializable."""
         waypoint = {
             "id": 111,
             "tags": {
                 "name": "Test POI"
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
-        result_dict = result.to_dict()
+        result = transformWaypointToPoi(waypoint)
+        result_dict = result.toDict()
         json_str = json.dumps(result_dict)
         assert json_str is not None
         parsed = json.loads(json_str)
-        assert parsed["id"] == waypoint["id"]
+        assert parsed["osm_id"] == waypoint["id"]
         assert parsed["name"] == waypoint["tags"]["name"]
 
 
@@ -206,10 +211,10 @@ class TestTransformWaypointToPeakPoI:
                 "natural": "peak",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert isinstance(result, PoI)
-        assert result.id == waypoint["id"]
+        assert result.osmId == waypoint["id"]
         assert result.name == waypoint["tags"]["name"]
 
     def test_peakpoi_elevation_present(self) -> None:
@@ -222,7 +227,7 @@ class TestTransformWaypointToPeakPoI:
                 "ele": "4808",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert result.elevation == "4808"
 
@@ -235,7 +240,7 @@ class TestTransformWaypointToPeakPoI:
                 "natural": "peak",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert result.elevation is None
 
@@ -249,7 +254,7 @@ class TestTransformWaypointToPeakPoI:
                 "ele": "0",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert result.elevation is None
 
@@ -263,7 +268,7 @@ class TestTransformWaypointToPeakPoI:
                 "ele": "-100",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert result.elevation is None
 
@@ -279,10 +284,10 @@ class TestTransformWaypointToNaturalPoI:
                 "leisure": "park",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
         assert isinstance(result, PoI)
-        assert result.id == waypoint["id"]
+        assert result.osmId == waypoint["id"]
         assert result.name == waypoint["tags"]["name"]
 
     def test_naturalpoi_from_landuse_forest(self) -> None:
@@ -294,7 +299,7 @@ class TestTransformWaypointToNaturalPoI:
                 "landuse": "forest",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
 
     def test_naturalpoi_from_landuse_recreation_ground(self) -> None:
@@ -306,7 +311,7 @@ class TestTransformWaypointToNaturalPoI:
                 "landuse": "recreation_ground",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
 
     def test_naturalpoi_from_landuse_education(self) -> None:
@@ -318,7 +323,7 @@ class TestTransformWaypointToNaturalPoI:
                 "landuse": "education",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
 
     def test_naturalpoi_without_name(self) -> None:
@@ -329,12 +334,12 @@ class TestTransformWaypointToNaturalPoI:
                 "leisure": "park",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
-        assert result.name == f"POI {waypoint['id']}"
+        assert result.name == None
 
-    def test_naturalpoi_to_dict(self) -> None:
-        """NaturalPoI.to_dict() should return correct dict."""
+    def test_naturalpoi_toDict(self) -> None:
+        """NaturalPoI.toDict() should return correct dict."""
         waypoint = {
             "id": 305,
             "tags": {
@@ -342,9 +347,9 @@ class TestTransformWaypointToNaturalPoI:
                 "leisure": "park",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
-        result_dict = result.to_dict()
-        assert result_dict["id"] == 305
+        result = transformWaypointToPoi(waypoint)
+        result_dict = result.toDict()
+        assert result_dict["osm_id"] == 305
         assert result_dict["name"] == "Test Park"
 
 
@@ -359,10 +364,10 @@ class TestTransformWaypointToIndustrialPoI:
                 "landuse": "industrial",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, IndustrialPoI)
         assert isinstance(result, PoI)
-        assert result.id == waypoint["id"]
+        assert result.osmId == waypoint["id"]
         assert result.name == waypoint["tags"]["name"]
 
     def test_industrialpoi_without_name(self) -> None:
@@ -373,12 +378,12 @@ class TestTransformWaypointToIndustrialPoI:
                 "landuse": "industrial",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, IndustrialPoI)
-        assert result.name == f"POI {waypoint['id']}"
+        assert result.name == None
 
-    def test_industrialpoi_to_dict(self) -> None:
-        """IndustrialPoI.to_dict() should return correct dict."""
+    def test_industrialpoi_toDict(self) -> None:
+        """IndustrialPoI.toDict() should return correct dict."""
         waypoint = {
             "id": 402,
             "tags": {
@@ -386,9 +391,9 @@ class TestTransformWaypointToIndustrialPoI:
                 "landuse": "industrial",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
-        result_dict = result.to_dict()
-        assert result_dict["id"] == 402
+        result = transformWaypointToPoi(waypoint)
+        result_dict = result.toDict()
+        assert result_dict["osm_id"] == 402
         assert result_dict["name"] == "Factory"
 
 
@@ -404,7 +409,7 @@ class TestPoiTypePriority:
                 "leisure": "park",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, PeakPoI)
         assert not isinstance(result, NaturalPoI)
 
@@ -418,55 +423,97 @@ class TestPoiTypePriority:
                 "landuse": "industrial",
             }
         }
-        result = transform_waypoint_to_poi(waypoint)
+        result = transformWaypointToPoi(waypoint)
         assert isinstance(result, NaturalPoI)
         assert not isinstance(result, IndustrialPoI)
 
 
 class TestSelectBestPoi:
-    """Tests for the select_best_poi function."""
-    def test_select_best_poi_returns_peak_over_natural(self) -> None:
-        """select_best_poi should return peak when both exist."""
+    """Tests for the filterWaypointsForCache function."""
+    def test_filterWaypointsForCache_returns_peak_over_natural(self) -> None:
+        """filterWaypointsForCache should return peak when both exist."""
         elements = [
-            {"id": 100, "tags": {"name": "Park", "leisure": "park"}},
-            {"id": 200, "tags": {"name": "Peak", "natural": "peak"}},
+            {
+                "id": 100,
+                "tags": {
+                    "name": "Park",
+                    "leisure": "park"
+                }
+            },
+            {
+                "id": 200,
+                "tags": {
+                    "name": "Peak",
+                    "natural": "peak"
+                }
+            },
         ]
-        result = select_best_poi(elements)
+        result, tileType = filterWaypointsForCache(elements)
+        assert tileType == "peak"
         assert result is not None
-        assert result["type"] == "peak"
-        assert result["poi"]["name"] == "Peak"
+        assert len(result) == 1
+        assert result[0]["name"] == "Peak"
 
-    def test_select_best_poi_returns_natural_over_industrial(self) -> None:
-        """select_best_poi should return natural when both exist."""
+    def test_filterWaypointsForCache_returns_natural_over_industrial(self) -> None:
+        """filterWaypointsForCache should return natural when both exist."""
         elements = [
-            {"id": 100, "tags": {"name": "Factory", "landuse": "industrial"}},
-            {"id": 200, "tags": {"name": "Park", "leisure": "park"}},
+            {
+                "id": 100,
+                "tags": {
+                    "name": "Factory",
+                    "landuse": "industrial"
+                }
+            },
+            {
+                "id": 200,
+                "tags": {
+                    "name": "Park",
+                    "leisure": "park"
+                }
+            },
         ]
-        result = select_best_poi(elements)
+        result, tileType = filterWaypointsForCache(elements)
+        assert tileType == "natural"
+        assert result == []
+
+    def test_filterWaypointsForCache_returns_first_by_id_on_tie(self) -> None:
+        """filterWaypointsForCache should return lowest ID when types match."""
+        elements = [
+            {
+                "id": 200,
+                "tags": {
+                    "name": "Second Peak",
+                    "natural": "peak"
+                }
+            },
+            {
+                "id": 100,
+                "tags": {
+                    "name": "First Peak",
+                    "natural": "peak"
+                }
+            },
+        ]
+        result, tileType = filterWaypointsForCache(elements)
+        assert tileType == "peak"
         assert result is not None
-        assert result["type"] == "natural"
-        assert result["poi"]["name"] == "Park"
+        assert len(result) == 1
+        assert result[0]["name"] == "First Peak"
 
-    def test_select_best_poi_returns_first_by_id_on_tie(self) -> None:
-        """select_best_poi should return lowest ID when types match."""
+    def test_filterWaypointsForCache_returns_none_when_empty(self) -> None:
+        """filterWaypointsForCache should return None for empty list."""
+        result = filterWaypointsForCache([])
+        assert result == ([], None)
+
+    def test_filterWaypointsForCache_returns_none_when_no_match(self) -> None:
+        """filterWaypointsForCache should return None when no matching POI type."""
         elements = [
-            {"id": 200, "tags": {"name": "Second Peak", "natural": "peak"}},
-            {"id": 100, "tags": {"name": "First Peak", "natural": "peak"}},
+            {
+                "id": 100,
+                "tags": {
+                    "name": "Random POI"
+                }
+            },
         ]
-        result = select_best_poi(elements)
-        assert result is not None
-        assert result["type"] == "peak"
-        assert result["poi"]["name"] == "First Peak"
-
-    def test_select_best_poi_returns_none_when_empty(self) -> None:
-        """select_best_poi should return None for empty list."""
-        result = select_best_poi([])
-        assert result is None
-
-    def test_select_best_poi_returns_none_when_no_match(self) -> None:
-        """select_best_poi should return None when no matching POI type."""
-        elements = [
-            {"id": 100, "tags": {"name": "Random POI"}},
-        ]
-        result = select_best_poi(elements)
-        assert result is None
+        result = filterWaypointsForCache(elements)
+        assert result == ([], None)
