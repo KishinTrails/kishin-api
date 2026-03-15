@@ -257,6 +257,66 @@ def formatPoiFromCache(cachedTile: dict, h3Cell: str, lat: float, lng: float) ->
     }
 
 
+def getPoiDataForCell(h3Cell: str) -> dict | None:
+    """Get POI data for a single H3 cell.
+
+    Args:
+        h3Cell: H3 cell identifier.
+
+    Returns:
+        Dictionary with POI data, or None if the cell is invalid.
+    """
+    try:
+        lat, lng, radiusM, _ = getH3Circle(h3Cell, 0)
+    except ValueError:
+        return None
+
+    cached = getTile(h3Cell)
+    if cached:
+        return formatPoiFromCache(cached, h3Cell, lat, lng)
+
+    # ============================================================================================
+    # This is temporary.
+    else:
+        # Return an empty result if the cell is not in cache to avoid expensive
+        # Overpass queries for now.
+        return formatPoiFromCache(
+            {
+                "tile_type": None,
+                "pois": [],
+            },
+            h3Cell,
+            lat,
+            lng,
+        )
+    # ============================================================================================
+
+    gdf = loadElementsAt(lat, lng, radiusM)
+
+    elements = []
+    for _, row in gdf.iterrows():
+        tags = dict(row.items())
+        geometry = tags.get("geometry")
+        if geometry is not None and isinstance(geometry,
+                                               Point) and not pointInH3Hexagon(geometry.y,
+                                                                               geometry.x,
+                                                                               h3Cell):
+            continue
+        elif False:  # FIXME: Placeholder for future polygon handling.
+            continue
+        else:
+            elements.append({
+                "id": row["id"],
+                "tags": dict(row.items())
+            })
+
+    waypoints, tileType = filterWaypointsForCache(elements)
+
+    setTile(h3Cell, tileType, waypoints)
+    cached = getTile(h3Cell)
+    return formatPoiFromCache(cached, h3Cell, lat, lng)
+
+
 if router:
 
     @router.get(
@@ -269,51 +329,63 @@ if router:
         description="H3 hexagonal cell identifier (e.g., '851f9633fffffff').",
     )):
         """Get POI data for a specific H3 cell.
-        
+
         Args:
             h3Cell: H3 cell identifier.
-            
+
         Returns:
             JSON response with POI data for the cell.
-            
+
         Raises:
             HTTPException 400: If the H3 cell is invalid.
+            HTTPException 404: If no POI data found for this cell.
         """
-        try:
-            lat, lng, radiusM, _ = getH3Circle(h3Cell, 0)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        data = getPoiDataForCell(h3Cell)
+        if data is None:
+            raise HTTPException(status_code=400, detail="Invalid H3 cell")
 
-        cached = getTile(h3Cell)
-        if cached:
-            return JSONResponse(content=formatPoiFromCache(cached, h3Cell, lat, lng))
+        if data.get("type") is None:
+            raise HTTPException(
+                status_code=404,
+                detail="POI data not found for this cell. Please try a different location or wait for the cache to be populated."
+            )
 
-        gdf = loadElementsAt(lat, lng, radiusM)
+        return JSONResponse(content=data)
 
-        elements = []
-        for _, row in gdf.iterrows():
-            tags = dict(row.items())
-            geometry = tags.get("geometry")
-            if geometry is not None and isinstance(geometry,
-                                                   Point) and not pointInH3Hexagon(geometry.y,
-                                                                                   geometry.x,
-                                                                                   h3Cell):
-                # Discard points that are outside the hexagon boundary.
-                pass
-            elif False:  # FIXME: Placeholder for future polygon handling.
-                # In case polygon is in the bounding box but does not intersect
-                # the hexagon, we should discard it. This requires more complex
-                # geometry checks.
-                pass
-            else:
-                elements.append({
-                    "id": row["id"],
-                    "tags": dict(row.items())
-                })
+    @router.get(
+        "/bycells",
+        summary="Get POI for multiple H3 cells",
+        response_class=JSONResponse,
+    )
+    def getPoIByCells(h3Cells: List[str] = Query(
+        ...,
+        description="List of H3 hexagonal cell identifiers.",
+    )):
+        """Get POI data for multiple H3 cells in a single request.
 
-        waypoints, tileType = filterWaypointsForCache(elements)
+        Args:
+            h3Cells: List of H3 cell identifiers.
 
-        # Cache the results and use the cached data for response formatting to ensure consistency.
-        setTile(h3Cell, tileType, waypoints)
-        cached = getTile(h3Cell)
-        return JSONResponse(content=formatPoiFromCache(cached, h3Cell, lat, lng))
+        Returns:
+            JSON response with POI data for cells that have POI information.
+
+        Raises:
+            HTTPException 400: If no cells provided.
+            HTTPException 404: If no POI data found for any of the provided cells.
+        """
+        if not h3Cells:
+            raise HTTPException(status_code=400, detail="No cells provided")
+
+        results = []
+        for h3Cell in h3Cells:
+            data = getPoiDataForCell(h3Cell)
+            if data is not None and data.get("type") is not None:
+                results.append(data)
+
+        if not results:
+            raise HTTPException(status_code=404, detail="No valid tiles found for the provided cells.")
+
+        return JSONResponse(content={
+            "cells": results,
+            "count": len(results)
+        })

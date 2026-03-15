@@ -15,7 +15,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from kishin_trails.main import app
-from kishin_trails.database import Base, getDb
+from kishin_trails.database import Base, getDb, SESSION_LOCAL
+from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.models import User, Tile, POI
 
 # --- Test Database Setup ---
 # We still use in-memory for speed in the fixtures, 
@@ -28,6 +30,12 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Monkey-patch cache module to use test database
+import kishin_trails.database as database_module
+import kishin_trails.cache as cache_module
+database_module.SESSION_LOCAL = TestingSessionLocal
+cache_module.SESSION_LOCAL = TestingSessionLocal
 
 
 @pytest.fixture(scope="function")
@@ -62,3 +70,41 @@ async def client(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def authenticated_client(client, db_session):
+    """
+    Fixture that provides an authenticated client for testing protected routes.
+    Overrides getCurrentUser to return a mock test user.
+    """
+    test_user = User(id=1, username="testuser", hashed_password="dummy_hash")
+    db_session.add(test_user)
+    db_session.commit()
+
+    def override_get_current_user():
+        return test_user
+
+    app.dependency_overrides[getCurrentUser] = override_get_current_user
+    yield client
+    app.dependency_overrides.pop(getCurrentUser, None)
+
+
+@pytest.fixture(scope="function")
+def cache_with_data():
+    """
+    Fixture that provides a function to pre-populate the cache with test POI data.
+    """
+    import kishin_trails.cache as cache_module
+    import kishin_trails.database as db_module
+    
+    # Ensure we're using the patched version
+    cache_module.SESSION_LOCAL = TestingSessionLocal
+    db_module.SESSION_LOCAL = TestingSessionLocal
+    
+    from kishin_trails.cache import setTile
+
+    def _set_tile(h3_cell: str, tile_type: str | None, pois: list):
+        setTile(h3_cell, tile_type, pois)
+
+    return _set_tile

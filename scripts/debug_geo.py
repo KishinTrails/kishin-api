@@ -11,8 +11,8 @@ import h3
 import requests
 
 from kishin_trails.config import settings
-from kishin_trails.overpass import OVERPASS_URL, build_bbox, build_query
-from kishin_trails.utils import get_h3_cell, get_h3_cell_radius, get_h3_circle
+from kishin_trails.overpass import OVERPASS_URL, buildBbox, buildQuery
+from kishin_trails.utils import getH3Cell, getH3CellRadius, getH3Circle
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
             return
         print("Available locations:")
         for name, loc in locations.items():
-            h3_cell = loc.get("h3_res10") or get_h3_cell(loc["lat"], loc["lng"], 10)
+            h3_cell = loc.get("h3_res10") or getH3Cell(loc["lat"], loc["lng"], 10)
             print(f"  {name}: lat={loc['lat']}, lng={loc['lng']}, h3_res10={h3_cell}")
         return
 
@@ -52,20 +52,20 @@ def main():
         loc = locations[args.location]
         lat = loc["lat"]
         lng = loc["lng"]
-        h3_cell_res10 = loc.get("h3_res10") or get_h3_cell(lat, lng, 10)
-        _, _, radius_m, search_cell = get_h3_circle(h3_cell_res10, args.level)
+        h3_cell_res10 = loc.get("h3_res10") or getH3Cell(lat, lng, 10)
+        _, _, radius_m, search_cell = getH3Circle(h3_cell_res10, args.level)
         print(f"Location: {args.location}")
 
     elif args.h3_cell:
         h3_cell_res10 = args.h3_cell
-        lat, lng, radius_m, search_cell = get_h3_circle(args.h3_cell, args.level)
+        lat, lng, radius_m, search_cell = getH3Circle(args.h3_cell, args.level)
         print(f"H3 cell: {args.h3_cell}")
 
     elif args.lat is not None and args.lng is not None:
         lat = args.lat
         lng = args.lng
-        h3_cell_res10 = get_h3_cell(lat, lng, args.resolution)
-        _, _, radius_m, search_cell = get_h3_circle(h3_cell_res10, args.level)
+        h3_cell_res10 = getH3Cell(lat, lng, args.resolution)
+        _, _, radius_m, search_cell = getH3Circle(h3_cell_res10, args.level)
 
     else:
         parser.print_help()
@@ -89,13 +89,13 @@ def main():
     for level in range(1, res + 1):
         parent = h3.cell_to_parent(h3_cell_res10, res=res - level)
         parent_lat, parent_lng = h3.cell_to_latlng(parent)
-        parent_radius = get_h3_cell_radius(parent)
+        parent_radius = getH3CellRadius(parent)
         print(
             f"  Level {level} (res {res - level}): {parent} | lat={parent_lat:.5f}, lng={parent_lng:.5f} | r={parent_radius}m"
         )
 
     if args.overpass:
-        bbox = build_bbox(search_lat, search_lng, radius_m)
+        bbox = buildBbox(search_lat, search_lng, radius_m)
         south, west, north, east = bbox
         north_west = (north, west)
         north_east = (north, east)
@@ -104,7 +104,7 @@ def main():
         print(f"\n--- Bounding Box ---")
         print(f"NW/SW/NE/SE: {north_west}, {south_west}, {north_east}, {south_east}")
 
-        query = build_query(bbox)
+        query = buildQuery(bbox)
         print(f"\n--- Overpass Query ---")
         print(query)
 
