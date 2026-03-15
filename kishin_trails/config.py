@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # In production, this MUST be a secure 32-byte secret.
     SECRET_KEY: str = "CHANGE_ME"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     # Overpass API
     OVERPASS_URL: str = "https://overpass-api.de/api/interpreter"
@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     DEFAULT_POI_RADIUS_M: int = 1000
 
     # Debug locations (loaded from .env, not committed)
-    DEBUG_LOCATIONS: dict[str, Any] = {}
+    DEBUG_LOCATIONS: dict[str,
+                          Any] = {}
 
     # Load from .env file if it exists
     model_config = SettingsConfigDict(env_file=".env")
