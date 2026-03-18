@@ -383,7 +383,7 @@ if router:
                 results.append(data)
 
         if not results:
-            raise HTTPException(status_code=404, detail="No valid tiles found for the provided cells.")
+            raise HTTPException(status_code=204, detail="No valid tiles found for the provided cells.")
 
         return JSONResponse(content={
             "cells": results,
