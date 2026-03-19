@@ -32,7 +32,8 @@ app = FastAPI(
 
 # Include routers
 app.include_router(auth_router)
-app.include_router(poi_router)
+if poi_router:
+    app.include_router(poi_router)
 
 
 @app.get("/", summary="Root endpoint")
