@@ -51,7 +51,7 @@ def hasTile(h3Cell: str) -> bool:
         session.close()
 
 
-def _queryTilesOrm(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
+def _queryTilesOrm(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any] | None]:
     """Query tiles using SQLAlchemy ORM with joined POI loading.
 
     Args:
@@ -63,10 +63,12 @@ def _queryTilesOrm(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
     """
     tiles = session.query(Tile).options(joinedload(Tile.pois)).filter(Tile.h3_cell.in_(h3Cells)).all()
 
-    results = {
-        h3Cell: None
-        for h3Cell in h3Cells
-    }
+    results: Dict[str,
+                  Dict[str,
+                       Any] | None] = {
+                           h3Cell: None
+                           for h3Cell in h3Cells
+                       }
     for tile in tiles:
         pois = []
         for poi in tile.pois:
@@ -87,7 +89,7 @@ def _queryTilesOrm(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
     return results
 
 
-def _queryTilesSql(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
+def _queryTilesSql(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any] | None]:
     """Query tiles using raw SQL with chunked execution.
 
     Args:
@@ -100,10 +102,12 @@ def _queryTilesSql(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
     if not h3Cells:
         return {}
 
-    results = {
-        h3Cell: None
-        for h3Cell in h3Cells
-    }
+    results: Dict[str,
+                  Dict[str,
+                       Any] | None] = {
+                           h3Cell: None
+                           for h3Cell in h3Cells
+                       }
 
     for i in range(0, len(h3Cells), CHUNK_SIZE):
         chunk = h3Cells[i:i + CHUNK_SIZE]
@@ -132,14 +136,16 @@ def _queryTilesSql(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
 
         for row in rows:
             h3CellKey = row[0]
-            if results[h3CellKey] is None:
-                results[h3CellKey] = {
+            tileData: Dict[str, Any] | None = results.get(h3CellKey)
+            if tileData is None:
+                tileData = {
                     "h3_cell": h3CellKey,
                     "tile_type": row[1],
                     "pois": []
                 }
+                results[h3CellKey] = tileData
             if row[2] is not None:
-                results[h3CellKey]["pois"].append(
+                tileData["pois"].append(
                     {
                         "osm_id": row[2],
                         "name": row[3],
@@ -169,7 +175,7 @@ def getTile(h3Cell: str) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def getTiles(h3Cells: List[str]) -> Dict[str, Dict[str, Any]]:
+def getTiles(h3Cells: List[str]) -> Dict[str, Dict[str, Any] | None]:
     """Retrieve multiple tiles from cache.
 
     Args:

@@ -57,6 +57,7 @@ class TestPoIGeometry:
         expected_geometry = Point(2.0, 45.0)
         poi = PoI(osmId=1, name="Test", geometry=expected_geometry)
         assert poi.geometry == expected_geometry
+        assert poi.geometry is not None
         assert poi.geometry.x == 2.0
         assert poi.geometry.y == 45.0
 

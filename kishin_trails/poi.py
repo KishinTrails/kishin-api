@@ -6,23 +6,22 @@ Provides API endpoints for querying nearby POIs based on location.
 
 import logging
 
-from typing import Any, List, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple
+from shapely.geometry import Point
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter, HTTPException, Query, Depends
+    from fastapi.responses import JSONResponse
 
 try:
     from fastapi import APIRouter, HTTPException, Query, Depends
 except ImportError:  # pragma: no cover
-    APIRouter = HTTPException = Query = Depends = None
+    APIRouter = HTTPException = Query = Depends = None  # type: ignore[assignment]
+
 try:
     from fastapi.responses import JSONResponse
 except ImportError:  # pragma: no cover
-
-    class _DummyResponse(dict):
-        def __init__(self, content: Any):
-            super().__init__(content=content)
-
-    JSONResponse = _DummyResponse
-
-from shapely.geometry import Point
+    JSONResponse = None  # type: ignore[assignment]
 
 from kishin_trails.cache import getTile, setTile
 from kishin_trails.config import settings
@@ -54,10 +53,10 @@ class PoI:
         name: Name of the POI.
         geometry: Shapely Point geometry.
     """
-    def __init__(self, osmId: int, name: str | None, geometry: Point):
+    def __init__(self, osmId: int, name: str | None, geometry: Point | None):
         self.osmId = osmId
-        self.name: str = name
-        self.geometry: Point = geometry
+        self.name: str | None = name
+        self.geometry: Point | None = geometry
 
     def toDict(self) -> dict[str, Any]:
         """Convert POI to dictionary representation.
@@ -91,7 +90,7 @@ class PeakPoI(PoI):
     Attributes:
         elevation: Elevation in meters above sea level.
     """
-    def __init__(self, osmId: int, name: str | None, geometry: Point, tags: dict):
+    def __init__(self, osmId: int, name: str | None, geometry: Point | None, tags: dict):
         super().__init__(osmId, name, geometry)
         self.elevation = tags["ele"] if "ele" in tags and tags["ele"] and int(tags["ele"]) > 0 else None
 
@@ -108,7 +107,7 @@ class NaturalPoI(PoI):
     Represents leisure and landuse areas such as parks, forests, and
     recreation grounds.
     """
-    def __init__(self, osmId: int, name: str | None, geometry: Point = None):
+    def __init__(self, osmId: int, name: str | None, geometry: Point | None = None):
         """Initialize Natural POI.
         
         Args:
@@ -124,7 +123,7 @@ class IndustrialPoI(PoI):
 
     Represents industrial zones and facilities from OSM data.
     """
-    def __init__(self, osmId: int, name: str | None, geometry: Point = None):
+    def __init__(self, osmId: int, name: str | None, geometry: Point | None = None):
         """Initialize Industrial POI.
         
         Args:
@@ -144,12 +143,15 @@ def transformWaypointToPoi(waypoint: dict) -> PoI:
     Returns:
         PoI, PeakPoI, NaturalPoI, or IndustrialPoI instance based on tags.
     """
-    geometry = waypoint.get("tags").get("geometry")
+    waypointTags = waypoint.get("tags") or {}
+    geometry = waypointTags.get("geometry") if waypointTags else None
     tags = {
         k: sanitizeValue(v)
-        for k, v in waypoint.get("tags", {}).items()
+        for k, v in waypointTags.items()
     }
     poiId = waypoint.get("id")
+    if poiId is None:
+        return PoI(osmId=0, name=None, geometry=None)
     name = tags.get("name")
 
     # Peaks
@@ -198,19 +200,25 @@ def filterWaypointsForCache(elements: List[dict]) -> Tuple[List[dict], str | Non
     # Peaks have highest priority. First filter for peaks.
     peaks = [p for p in pois if isinstance(p, PeakPoI) and p.name]
     if len(peaks) == 1:
+        logger.info(f"Single peak found: {peaks[0].name} (ID: {peaks[0].osmId}, Elevation: {peaks[0].elevation}m)")
         return [peaks[0].toDict()], "peak"
     if len(peaks) > 1:
         # Multiple peaks found, choose the one with highest elevation.
         peaks = sorted(peaks, key=lambda p: -int(p.elevation) if p.elevation is not None else p.osmId)
+        logger.info(
+            f"Multiple peaks found, selecting highest: {peaks[0].name} (ID: {peaks[0].osmId}, Elevation: {peaks[0].elevation}m)"
+        )
         return [peaks[0].toDict()], "peak"
 
-    # If no peaks, look for natural features.
-    if any(isinstance(p, NaturalPoI) for p in pois):
-        return [], "natural"
-
-    # If no natural features, look for industrial features.
+    # If no peaks, look for industrial features.
     if any(isinstance(p, IndustrialPoI) for p in pois):
+        logger.info(f"Industrial feature found: {[p.name for p in pois if isinstance(p, IndustrialPoI) and p.name]}")
         return [], "industrial"
+
+    # If no industrial features, look for natural features.
+    if any(isinstance(p, NaturalPoI) for p in pois):
+        logger.info(f"Natural feature found: {[p.name for p in pois if isinstance(p, NaturalPoI) and p.name]}")
+        return [], "natural"
 
     return [], None
 
@@ -302,13 +310,13 @@ def getPoiDataForCell(h3Cell: str) -> dict | None:
                                                                                geometry.x,
                                                                                h3Cell):
             continue
-        elif False:  # FIXME: Placeholder for future polygon handling.
+        if False:  # FIXME: Placeholder for future polygon handling.
             continue
-        else:
-            elements.append({
-                "id": row["id"],
-                "tags": dict(row.items())
-            })
+
+        elements.append({
+            "id": row["id"],
+            "tags": dict(row.items())
+        })
 
     waypoints, tileType = filterWaypointsForCache(elements)
 

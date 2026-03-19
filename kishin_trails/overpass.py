@@ -194,7 +194,11 @@ def reconstructMultipolygons(osmJson: dict) -> List[Polygon | MultiPolygon]:
         if not outerLines:
             continue
         merged = linemerge(outerLines)
-        lineIter = list(merged.geoms) if hasattr(merged, "geoms") else [merged]
+        lineIter: list
+        if merged.geom_type == "MultiLineString":
+            lineIter = list(merged.geoms)
+        else:
+            lineIter = [merged]
         polys = list(polygonize(lineIter))
         if not polys:
             continue
@@ -287,7 +291,7 @@ def osmToGeoDataFrames(osmJson: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFram
 # ---------------------------------------------------------------------------
 
 
-def removeWaysInsideRelations(waysGdf: gpd.GeoDataFrame, relationsGdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def removeWaysInsideRelations(waysGdf: gpd.GeoDataFrame, relationsGdf: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame:
     """Remove ways that are fully contained within relation polygons.
     
     Args:
@@ -300,6 +304,8 @@ def removeWaysInsideRelations(waysGdf: gpd.GeoDataFrame, relationsGdf: gpd.GeoDa
     Raises:
         ValueError: If CRS mismatch between ways and relations.
     """
+    if relationsGdf is None or relationsGdf.empty:
+        return waysGdf
     if waysGdf.crs != relationsGdf.crs:
         raise ValueError("CRS mismatch between ways and relations")
     validGeoms = [geom for geom in relationsGdf.geometry if geom is not None]
@@ -366,8 +372,11 @@ def loadElementsAt(
     waysGdf = removeWaysInsideRelations(waysGdf, relationsGdf)
     waysGdf = waysGdf.copy()
     waysGdf["osm_type"] = "way"
-    relationsGdf = relationsGdf.copy()
-    relationsGdf["osm_type"] = "relation"
+    if relationsGdf is not None and not relationsGdf.empty:
+        relationsGdf = relationsGdf.copy()
+        relationsGdf["osm_type"] = "relation"
+    else:
+        relationsGdf = gpd.GeoDataFrame(columns=["osm_type", "geometry"], crs="EPSG:4326")
     nodesGdf = nodesGdf.copy()
     nodesGdf["osm_type"] = "node"
     combined = gpd.pd.concat([waysGdf, relationsGdf, nodesGdf], ignore_index=True)
