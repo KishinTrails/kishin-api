@@ -12,10 +12,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import joinedload
 
 from kishin_trails.database import SESSION_LOCAL
-from kishin_trails.models import Tile, POI
+from kishin_trails.models import PostProcessingPoI, Tile, POI
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARN,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger("cache")
@@ -228,3 +228,71 @@ def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) ->
         logger.info("Cached tile %s with %d pois", h3Cell, len(pois))
     finally:
         session.close()
+
+
+def get_post_processing_poi_by_osm_id(osm_id: int) -> Optional[Dict[str, Any]]:
+    """Get PostProcessingPoI by OSM ID.
+
+    Args:
+        osm_id: The OSM element ID.
+
+    Returns:
+        Dictionary with id, osm_id, name, tile_type or None if not found.
+    """
+    session = SESSION_LOCAL()
+    try:
+        poi = session.query(PostProcessingPoI).filter(PostProcessingPoI.osm_id == osm_id).first()
+        if poi is None:
+            return None
+        return {
+            "id": poi.id,
+            "osm_id": poi.osm_id,
+            "name": poi.name,
+            "tile_type": poi.tile_type
+        }
+    finally:
+        session.close()
+
+
+def get_all_post_processing_pois() -> List[Dict[str, Any]]:
+    """Get all PostProcessingPoI entries.
+
+    Returns:
+        List of dictionaries with id, osm_id, name, tile_type.
+    """
+    session = SESSION_LOCAL()
+    try:
+        pois = session.query(PostProcessingPoI).all()
+        return [{
+            "id": poi.id,
+            "osm_id": poi.osm_id,
+            "name": poi.name,
+            "tile_type": poi.tile_type
+        } for poi in pois]
+    finally:
+        session.close()
+
+
+def get_tiles_for_post_processing_poi(poi_id: int) -> List[str]:
+    """Get all tile h3_cells linked to a PostProcessingPoI.
+
+    Args:
+        poi_id: The PostProcessingPoI ID.
+
+    Returns:
+        List of H3 cell identifiers.
+    """
+    session = SESSION_LOCAL()
+    try:
+        result = session.execute(
+            text("SELECT tile_h3_cell FROM tile_post_processing_pois WHERE post_processing_poi_id = :poi_id"),
+            {
+                "poi_id": poi_id
+            }
+        )
+        return [row[0] for row in result.fetchall()]
+    finally:
+        session.close()
+
+
+initDb()

@@ -4,7 +4,7 @@ SQLAlchemy models for the Kishin API.
 Defines the database schema for users, tiles (H3 cells), and Points of Interest.
 """
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from kishin_trails.database import Base
@@ -42,6 +42,11 @@ class Tile(Base):
     h3_cell = Column(String, primary_key=True)
     tile_type = Column(String)
     pois = relationship("POI", back_populates="tile", cascade="all, delete-orphan")
+    post_processing_pois = relationship(
+        "PostProcessingPoI",
+        secondary="tile_post_processing_pois",
+        back_populates="tiles"
+    )
 
 
 class POI(Base):
@@ -73,3 +78,25 @@ class POI(Base):
     tile = relationship("Tile", back_populates="pois")
 
     __table_args__ = (UniqueConstraint('h3_cell', 'osm_id', name='uix_h3_osm'),)
+
+
+tile_post_processing_pois = Table(
+    "tile_post_processing_pois",
+    Base.metadata,
+    Column("tile_h3_cell", String, ForeignKey("tiles.h3_cell"), primary_key=True),
+    Column("post_processing_poi_id", Integer, ForeignKey("post_processing_pois.id"), primary_key=True)
+)
+
+
+class PostProcessingPoI(Base):
+    __tablename__ = "post_processing_pois"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    osm_id = Column(Integer, nullable=False, unique=True)
+    name = Column(String)
+    tile_type = Column(String, nullable=False)
+    tiles = relationship(
+        "Tile",
+        secondary="tile_post_processing_pois",
+        back_populates="post_processing_pois"
+    )

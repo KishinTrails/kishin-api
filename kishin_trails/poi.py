@@ -30,7 +30,7 @@ from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.overpass import loadElementsAt
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARN,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger("PoI")
@@ -92,7 +92,7 @@ class PeakPoI(PoI):
     """
     def __init__(self, osmId: int, name: str | None, geometry: Point | None, tags: dict):
         super().__init__(osmId, name, geometry)
-        self.elevation = tags["ele"] if "ele" in tags and tags["ele"] and int(tags["ele"]) > 0 else None
+        self.elevation = tags["ele"] if "ele" in tags and tags["ele"] and int(float(tags["ele"])) > 0 else None
 
     def toDict(self) -> dict[str, Any]:
         baseDict = super().toDict()
