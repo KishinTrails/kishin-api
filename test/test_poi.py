@@ -461,20 +461,20 @@ class TestSelectBestPoi:
             {
                 "id": 100,
                 "tags": {
-                    "name": "Factory",
-                    "landuse": "industrial"
+                    "name": "Park",
+                    "leisure": "park"
                 }
             },
             {
                 "id": 200,
                 "tags": {
-                    "name": "Park",
-                    "leisure": "park"
+                    "name": "Factory",
+                    "landuse": "industrial"
                 }
             },
         ]
         result, tileType = filterWaypointsForCache(elements)
-        assert tileType == "natural"
+        assert tileType == "industrial"
         assert result == []
 
     def test_filterWaypointsForCache_returns_first_by_id_on_tie(self) -> None:
@@ -522,7 +522,6 @@ class TestSelectBestPoi:
 
 class TestGetPoiByCell:
     """E2E tests for the /poi/bycell endpoint."""
-
     @pytest.mark.asyncio
     async def test_bycell_returns_400_for_invalid_h3_cell(self, authenticated_client) -> None:
         """GET /poi/bycell should return 400 for invalid H3 cell."""
@@ -538,11 +537,16 @@ class TestGetPoiByCell:
         assert "POI data not found" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_bycell_returns_200_for_cached_cell_with_poi(
-        self, authenticated_client, cache_with_data
-    ) -> None:
+    async def test_bycell_returns_200_for_cached_cell_with_poi(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return 200 for cached cell with POI data."""
-        cache_with_data("8a1f96334daffff", "peak", [{"osm_id": 1, "name": "Test Peak", "lat": 45.0, "lon": 3.0}])
+        cache_with_data("8a1f96334daffff",
+                        "peak",
+                        [{
+                            "osm_id": 1,
+                            "name": "Test Peak",
+                            "lat": 45.0,
+                            "lon": 3.0
+                        }])
         response = await authenticated_client.get("/poi/bycell?h3Cell=8a1f96334daffff")
         assert response.status_code == 200
         data = response.json()
@@ -551,20 +555,23 @@ class TestGetPoiByCell:
         assert data["poi"]["name"] == "Test Peak"
 
     @pytest.mark.asyncio
-    async def test_bycell_returns_404_for_cached_cell_no_poi(
-        self, authenticated_client, cache_with_data
-    ) -> None:
+    async def test_bycell_returns_404_for_cached_cell_no_poi(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return 404 for cached cell with no POI data."""
         cache_with_data("8a1f96334daffff", None, [])
         response = await authenticated_client.get("/poi/bycell?h3Cell=8a1f96334daffff")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_bycell_returns_natural_type(
-        self, authenticated_client, cache_with_data
-    ) -> None:
+    async def test_bycell_returns_natural_type(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return correct type for natural POI."""
-        cache_with_data("8a1f96334daffff", "natural", [{"osm_id": 2, "name": "Test Park", "lat": 45.0, "lon": 3.0}])
+        cache_with_data("8a1f96334daffff",
+                        "natural",
+                        [{
+                            "osm_id": 2,
+                            "name": "Test Park",
+                            "lat": 45.0,
+                            "lon": 3.0
+                        }])
         response = await authenticated_client.get("/poi/bycell?h3Cell=8a1f96334daffff")
         assert response.status_code == 200
         data = response.json()
@@ -572,11 +579,18 @@ class TestGetPoiByCell:
         assert data["count"] == 1
 
     @pytest.mark.asyncio
-    async def test_bycell_returns_industrial_type(
-        self, authenticated_client, cache_with_data
-    ) -> None:
+    async def test_bycell_returns_industrial_type(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return correct type for industrial POI."""
-        cache_with_data("8a1f96334daffff", "industrial", [{"osm_id": 3, "name": "Test Factory", "lat": 45.0, "lon": 3.0}])
+        cache_with_data(
+            "8a1f96334daffff",
+            "industrial",
+            [{
+                "osm_id": 3,
+                "name": "Test Factory",
+                "lat": 45.0,
+                "lon": 3.0
+            }]
+        )
         response = await authenticated_client.get("/poi/bycell?h3Cell=8a1f96334daffff")
         assert response.status_code == 200
         data = response.json()
