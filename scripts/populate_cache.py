@@ -13,15 +13,15 @@ import time
 import h3
 import requests
 from shapely.geometry import Point
+from sqlalchemy import text
 from tqdm import tqdm
 
-from kishin_trails.cache import setTile, getTile, get_post_processing_poi_by_osm_id, get_all_post_processing_pois, get_tiles_for_post_processing_poi
+from kishin_trails.cache import setTile, getTile, getAllPostProcessingPois, getTilesForPostProcessingPoi
 from kishin_trails.database import SESSION_LOCAL
 from kishin_trails.models import PostProcessingPoI, Tile
 from kishin_trails.overpass import loadElementsAt
 from kishin_trails.poi import filterWaypointsForCache
 from kishin_trails.utils import getH3Circle, pointInH3Hexagon
-from sqlalchemy import text
 
 logging.basicConfig(
     level=logging.WARN,
@@ -30,14 +30,14 @@ logging.basicConfig(
 logger = logging.getLogger("populate_cache")
 
 
-def insert_or_get_post_processing_poi(osm_id: int, name: str | None, tile_type: str) -> int:
+def insertOrGetPostProcessingPoi(osmId: int, name: str | None, tileType: str) -> int:
     """Insert or get existing PostProcessingPoI. Returns the ID."""
     session = SESSION_LOCAL()
     try:
-        existing = session.query(PostProcessingPoI).filter(PostProcessingPoI.osm_id == osm_id).first()
+        existing = session.query(PostProcessingPoI).filter(PostProcessingPoI.osm_id == osmId).first()
         if existing:
             return existing.id
-        poi = PostProcessingPoI(osm_id=osm_id, name=name, tile_type=tile_type)
+        poi = PostProcessingPoI(osm_id=osmId, name=name, tile_type=tileType)
         session.add(poi)
         session.commit()
         session.refresh(poi)
@@ -46,17 +46,17 @@ def insert_or_get_post_processing_poi(osm_id: int, name: str | None, tile_type: 
         session.close()
 
 
-def insert_junction_entry(tile_h3_cell: str, poi_id: int) -> None:
+def insertJunctionEntry(tileH3Cell: str, poiId: int) -> None:
     """Insert into junction table (INSERT OR IGNORE)."""
     session = SESSION_LOCAL()
     try:
         session.execute(
             text(
-                "INSERT OR IGNORE INTO tile_post_processing_pois (tile_h3_cell, post_processing_poi_id) VALUES (:tile, :poi_id)"
+                "INSERT OR IGNORE INTO tile_post_processing_pois (tile_h3_cell, post_processing_poi_id) VALUES (:tile, :poiId)"
             ),
             {
-                "tile": tile_h3_cell,
-                "poi_id": poi_id
+                "tile": tileH3Cell,
+                "poiId": poiId
             }
         )
         session.commit()
@@ -64,35 +64,35 @@ def insert_junction_entry(tile_h3_cell: str, poi_id: int) -> None:
         session.close()
 
 
-def set_tile_type(h3_cell: str, tile_type: str) -> None:
+def setTileType(h3Cell: str, tileType: str) -> None:
     """Update tile_type for a tile."""
     session = SESSION_LOCAL()
     try:
-        tile = session.query(Tile).filter(Tile.h3_cell == h3_cell).first()
+        tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
         if tile:
-            tile.tile_type = tile_type
+            tile.tile_type = tileType
             session.commit()
     finally:
         session.close()
 
 
-def delete_post_processing_poi_and_junctions(poi_id: int) -> None:
+def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
     """Delete PostProcessingPoI and its junction entries."""
     session = SESSION_LOCAL()
     try:
         session.execute(
-            text("DELETE FROM tile_post_processing_pois WHERE post_processing_poi_id = :poi_id"),
+            text("DELETE FROM tile_post_processing_pois WHERE post_processing_poi_id = :poiId"),
             {
-                "poi_id": poi_id
+                "poiId": poiId
             }
         )
-        session.query(PostProcessingPoI).filter(PostProcessingPoI.id == poi_id).delete()
+        session.query(PostProcessingPoI).filter(PostProcessingPoI.id == poiId).delete()
         session.commit()
     finally:
         session.close()
 
 
-def populate_cache_for_tile(h3Cell: str) -> None:
+def populateCacheForTile(h3Cell: str) -> None:
     """Populate cache for a single H3 tile.
     
     Args:
@@ -126,7 +126,7 @@ def populate_cache_for_tile(h3Cell: str) -> None:
             continue
 
         # Load OSM elements with retry logic for 504 errors
-        retry_delay = 5
+        retryDelay = 5
         while True:
             try:
                 gdf = loadElementsAt(lat, lng, radiusM)
@@ -137,10 +137,10 @@ def populate_cache_for_tile(h3Cell: str) -> None:
                         "Overpass API error %s for tile %s, retrying in %ds",
                         e.response.status_code,
                         childCell,
-                        retry_delay
+                        retryDelay
                     )
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
+                    time.sleep(retryDelay)
+                    retryDelay *= 2
                 else:
                     raise
             except Exception as e:
@@ -161,30 +161,30 @@ def populate_cache_for_tile(h3Cell: str) -> None:
             elif geometry is not None and hasattr(geometry,
                                                   'geom_type') and geometry.geom_type in ('Polygon',
                                                                                           'MultiPolygon'):
-                tile_type = None
+                tileType = None
                 if tags.get('landuse') == 'forest':
-                    tile_type = 'natural'
+                    tileType = 'natural'
                 elif tags.get('landuse') == 'industrial':
-                    tile_type = 'industrial'
+                    tileType = 'industrial'
                 elif tags.get('leisure') == 'park':
-                    tile_type = 'natural'
+                    tileType = 'natural'
 
-                if tile_type:
-                    all_cells = []
+                if tileType:
+                    allCells = []
                     if geometry.geom_type == 'Polygon':
                         coords = list(geometry.exterior.coords)
-                        h3_polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                        all_cells = h3.polygon_to_cells(h3_polygon, res=10)
+                        h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
+                        allCells = h3.polygon_to_cells(h3Polygon, res=10)
                     elif geometry.geom_type == 'MultiPolygon':
                         for poly in geometry.geoms:
                             coords = list(poly.exterior.coords)
-                            h3_polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                            all_cells.extend(h3.polygon_to_cells(h3_polygon, res=10))
+                            h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
+                            allCells.extend(h3.polygon_to_cells(h3Polygon, res=10))
 
-                    poi_id = insert_or_get_post_processing_poi(int(row['id']), tags.get('name'), tile_type)
+                    poiId = insertOrGetPostProcessingPoi(int(row['id']), tags.get('name'), tileType)
 
-                    for cell in all_cells:
-                        insert_junction_entry(cell, poi_id)
+                    for cell in allCells:
+                        insertJunctionEntry(cell, poiId)
             elements.append({
                 "id": row["id"],
                 "tags": dict(row.items())
@@ -197,24 +197,24 @@ def populate_cache_for_tile(h3Cell: str) -> None:
     logger.info("Finished populating cache for %s", h3Cell)
 
 
-def fill_polygon_interiors() -> None:
+def fillPolygonInteriors() -> None:
     """Fill interior tiles based on stored polygons."""
     logger.info("Starting polygon interior filling...")
 
-    pois = get_all_post_processing_pois()
+    pois = getAllPostProcessingPois()
     logger.info("Found %d polygons to process", len(pois))
 
     for poi in pois:
-        tiles = get_tiles_for_post_processing_poi(poi['id'])
+        tiles = getTilesForPostProcessingPoi(poi['id'])
         logger.debug("Processing polygon %d with %d linked tiles", poi['id'], len(tiles))
 
-        for tile_h3_cell in tiles:
-            tile = getTile(tile_h3_cell)
+        for tileH3Cell in tiles:
+            tile = getTile(tileH3Cell)
             if tile and tile.get('tile_type') is None:
-                set_tile_type(tile_h3_cell, poi['tile_type'])
-                logger.debug("Set tile %s to type %s", tile_h3_cell, poi['tile_type'])
+                setTileType(tileH3Cell, poi['tile_type'])
+                logger.debug("Set tile %s to type %s", tileH3Cell, poi['tile_type'])
 
-        delete_post_processing_poi_and_junctions(poi['id'])
+        deletePostProcessingPoiAndJunctions(poi['id'])
         logger.debug("Cleaned up polygon %d", poi['id'])
 
     logger.info("Finished polygon interior filling")
@@ -235,7 +235,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.fill_only:
-        fill_polygon_interiors()
+        fillPolygonInteriors()
         return
 
     h3Cell = args.h3_cell
@@ -262,10 +262,10 @@ def main() -> None:
             children = [h3Cell]
         logger.info("Dry run: would process %d level 10 tiles", len(children))
     else:
-        populate_cache_for_tile(h3Cell)
+        populateCacheForTile(h3Cell)
 
     if args.fill_polygons:
-        fill_polygon_interiors()
+        fillPolygonInteriors()
 
 
 if __name__ == "__main__":

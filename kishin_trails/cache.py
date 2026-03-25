@@ -230,18 +230,18 @@ def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) ->
         session.close()
 
 
-def get_post_processing_poi_by_osm_id(osm_id: int) -> Optional[Dict[str, Any]]:
+def getPostProcessingPoiByOsmId(osmId: int) -> Optional[Dict[str, Any]]:
     """Get PostProcessingPoI by OSM ID.
 
     Args:
-        osm_id: The OSM element ID.
+        osmId: The OSM element ID.
 
     Returns:
         Dictionary with id, osm_id, name, tile_type or None if not found.
     """
     session = SESSION_LOCAL()
     try:
-        poi = session.query(PostProcessingPoI).filter(PostProcessingPoI.osm_id == osm_id).first()
+        poi = session.query(PostProcessingPoI).filter(PostProcessingPoI.osm_id == osmId).first()
         if poi is None:
             return None
         return {
@@ -254,7 +254,7 @@ def get_post_processing_poi_by_osm_id(osm_id: int) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def get_all_post_processing_pois() -> List[Dict[str, Any]]:
+def getAllPostProcessingPois() -> List[Dict[str, Any]]:
     """Get all PostProcessingPoI entries.
 
     Returns:
@@ -273,11 +273,11 @@ def get_all_post_processing_pois() -> List[Dict[str, Any]]:
         session.close()
 
 
-def get_tiles_for_post_processing_poi(poi_id: int) -> List[str]:
+def getTilesForPostProcessingPoi(poiId: int) -> List[str]:
     """Get all tile h3_cells linked to a PostProcessingPoI.
 
     Args:
-        poi_id: The PostProcessingPoI ID.
+        poiId: The PostProcessingPoI ID.
 
     Returns:
         List of H3 cell identifiers.
@@ -285,9 +285,9 @@ def get_tiles_for_post_processing_poi(poi_id: int) -> List[str]:
     session = SESSION_LOCAL()
     try:
         result = session.execute(
-            text("SELECT tile_h3_cell FROM tile_post_processing_pois WHERE post_processing_poi_id = :poi_id"),
+            text("SELECT tile_h3_cell FROM tile_post_processing_pois WHERE post_processing_poi_id = :poiId"),
             {
-                "poi_id": poi_id
+                "poiId": poiId
             }
         )
         return [row[0] for row in result.fetchall()]
