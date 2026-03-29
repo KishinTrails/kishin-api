@@ -21,7 +21,15 @@ logger = logging.getLogger("import_gpx")
 
 
 def getOrCreateTile(session, h3Cell: str) -> Tile:
-    """Get existing tile or create new one."""
+    """Get existing tile from database or create a new one.
+
+    Args:
+        session: SQLAlchemy database session.
+        h3Cell: H3 cell identifier.
+
+    Returns:
+        The existing or newly created Tile model instance.
+    """
     tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
     if not tile:
         tile = Tile(h3_cell=h3Cell)
@@ -31,7 +39,20 @@ def getOrCreateTile(session, h3Cell: str) -> Tile:
 
 
 def importGpx(gpxPath: str, username: str, resolution: int = 10, dryRun: bool = False) -> None:
-    """Import GPX file and mark tiles as explored by user."""
+    """Import GPX file and mark tiles as explored by user.
+
+    Reads a GPX file, extracts all track points, converts them to H3 cells
+    at the specified resolution, and marks them as explored for the given user.
+
+    Args:
+        gpxPath: Path to the GPX file.
+        username: Username to associate explored tiles with.
+        resolution: H3 resolution level (default: 10).
+        dryRun: If True, only print tiles without updating the database.
+
+    Raises:
+        SystemExit: If the specified user is not found in the database.
+    """
     gpxFile = gpx.read_gpx(gpxPath)
 
     tiles: set[str] = set()
@@ -71,6 +92,10 @@ def importGpx(gpxPath: str, username: str, resolution: int = 10, dryRun: bool = 
 
 
 def main() -> None:
+    """Main entry point for the GPX import script.
+
+    Parses command-line arguments and triggers the import process.
+    """
     parser = argparse.ArgumentParser(description="Import GPX file and register explored tiles")
     parser.add_argument("gpx_file", help="Path to GPX file")
     parser.add_argument("--user", "-u", required=True, help="Username to associate explored tiles with")

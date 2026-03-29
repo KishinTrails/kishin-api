@@ -221,7 +221,16 @@ def fillPolygonInteriors() -> None:
 
 
 def main() -> None:
-    """Main entry point for the script."""
+    """Main entry point for the cache population script.
+
+    Populates the cache with POI data for H3 tiles by:
+    1. Uncompacting H3 tiles to level 10
+    2. Querying the Overpass API for each tile
+    3. Filtering and caching POI data
+
+    Supports optional polygon interior filling to propagate tile types
+    to interior cells of polygon areas (forests, parks, industrial zones).
+    """
     parser = argparse.ArgumentParser(description="Populate cache with POI data for H3 tiles")
     parser.add_argument("h3_cell", nargs="?", help="H3 cell ID (resolution >= 10)")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without actually caching")
