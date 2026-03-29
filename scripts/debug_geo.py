@@ -16,6 +16,17 @@ from kishin_trails.utils import getH3Cell, getH3CellRadius, getH3Circle
 
 
 def main():
+    """Main entry point for the debug geo/H3/Overpass utility script.
+
+    Parses command-line arguments and performs requested geo operations:
+    - List available debug locations from configuration
+    - Convert coordinates to H3 cells
+    - Get parent H3 cells at different resolution levels
+    - Build and optionally execute Overpass API queries
+
+    The script supports multiple input modes (location name, lat/lng, or H3 cell)
+    and can output bounding boxes, Overpass queries, and execute them against the API.
+    """
     parser = argparse.ArgumentParser(description="Debug geo/H3/Overpass utilities")
     parser.add_argument("--location", type=str, help="Name of location from DEBUG_LOCATIONS")
     parser.add_argument("--lat", type=float, help="Latitude")

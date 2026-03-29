@@ -43,10 +43,18 @@ DEFAULT_OVERPASS_RADIUS_M = settings.DEFAULT_OVERPASS_RADIUS_M
 
 
 def buildBbox(lat: float, lon: float, radiusM: float) -> Tuple[float, float, float, float]:
-    """Return (south, west, north, east) degrees around a point.
+    """Calculate a bounding box around a point.
 
     Uses a simple approximation: 1° latitude ≈ 111.32 km.
     Longitude degrees are adjusted by cos(latitude) at non-equatorial positions.
+
+    Args:
+        lat: Center latitude in decimal degrees.
+        lon: Center longitude in decimal degrees.
+        radiusM: Radius in meters.
+
+    Returns:
+        Tuple of (south, west, north, east) coordinates in decimal degrees.
     """
     if radiusM == 0:
         return lat, lon, lat, lon
@@ -162,9 +170,13 @@ def reconstructMultipolygons(osmJson: dict) -> List[Polygon | MultiPolygon]:
     * A :class:`shapely.geometry.Polygon` is created from the resulting ring.
     * If multiple outer rings exist for a relation they are combined into a
       :class:`shapely.geometry.MultiPolygon`.
-    """
-    """Return a list of Polygon/MultiPolygon objects for multipolygon relations.
-    Only outer ways are considered; inner rings are ignored.
+
+    Args:
+        osmJson: Dictionary containing Overpass API response with 'elements'.
+
+    Returns:
+        List of Polygon/MultiPolygon objects for multipolygon relations.
+        Only outer ways are considered; inner rings are ignored.
     """
     elements = osmJson["elements"]
     nodes = {
@@ -327,14 +339,14 @@ def loadElements(
     radiusM: float = DEFAULT_OVERPASS_RADIUS_M,
 ) -> gpd.GeoDataFrame:
     """Load OSM elements for given center coordinates.
-    
+
     Args:
-        centerLat: Center latitude.
-        centerLon: Center longitude.
+        centerLat: Center latitude in decimal degrees.
+        centerLon: Center longitude in decimal degrees.
         radiusM: Search radius in meters.
-        
+
     Returns:
-        GeoDataFrame with OSM elements.
+        GeoDataFrame containing OSM elements (ways, relations, and nodes).
     """
     return loadElementsAt(centerLat, centerLon, radiusM)
 
@@ -345,14 +357,14 @@ def loadElementsAt(
     radiusM: float,
 ) -> gpd.GeoDataFrame:
     """Load OSM elements at specific coordinates.
-    
+
     Args:
-        centerLat: Center latitude.
-        centerLon: Center longitude.
+        centerLat: Center latitude in decimal degrees.
+        centerLon: Center longitude in decimal degrees.
         radiusM: Search radius in meters.
-        
+
     Returns:
-        GeoDataFrame with OSM elements.
+        GeoDataFrame containing OSM elements (ways, relations, and nodes).
     """
     bbox = buildBbox(centerLat, centerLon, radiusM)
     query = buildQuery(bbox)

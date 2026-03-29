@@ -10,9 +10,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """
     Application settings, loaded from environment variables or a .env file.
+
+    Attributes:
+        DATABASE_URL: SQLAlchemy database connection string.
+        SECRET_KEY: Secret key for JWT token signing. In production, this MUST be a secure 32-byte secret.
+        ALGORITHM: Algorithm used for JWT token encoding (default: HS256).
+        ACCESS_TOKEN_EXPIRE_MINUTES: Token expiration time in minutes.
+        OVERPASS_URL: Base URL for the Overpass API endpoint.
+        DEFAULT_CENTER_LAT: Default latitude for Overpass queries.
+        DEFAULT_CENTER_LON: Default longitude for Overpass queries.
+        DEFAULT_OVERPASS_RADIUS_M: Default search radius in meters for Overpass queries.
+        DEFAULT_POI_RADIUS_M: Default search radius in meters for POI queries.
+        DEBUG_LOCATIONS: Dictionary of debug locations (loaded from .env, not committed).
     """
 
-    # Database
     DATABASE_URL: str = "sqlite:///./kishin.db"
 
     # Security
