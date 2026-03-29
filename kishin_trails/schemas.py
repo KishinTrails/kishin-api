@@ -101,3 +101,13 @@ class TileOut(BaseModel):
     pois: List[POIOut] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExploredTilesOut(BaseModel):
+    """Schema for explored tiles response.
+
+    Attributes:
+        explored: List of explored H3 cell identifiers.
+    """
+
+    explored: List[str]
