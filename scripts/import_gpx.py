@@ -5,10 +5,9 @@ import argparse
 import logging
 import sys
 import os
+import gpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from gpx import read_gpx
 
 from kishin_trails.database import SESSION_LOCAL
 from kishin_trails.models import Tile, User
@@ -33,12 +32,12 @@ def getOrCreateTile(session, h3Cell: str) -> Tile:
 
 def importGpx(gpxPath: str, username: str, resolution: int = 10, dryRun: bool = False) -> None:
     """Import GPX file and mark tiles as explored by user."""
-    gpx = read_gpx(gpxPath)
+    gpxFile = gpx.read_gpx(gpxPath)
 
     tiles: set[str] = set()
-    for track in gpx.trk:
-        for segment in track.segments:
-            for point in segment.points:
+    for track in gpxFile.trk:
+        for segment in track.trkseg:
+            for point in segment.trkpt:
                 lat = float(point.lat)
                 lng = float(point.lon)
                 h3Cell = getH3Cell(lat, lng, resolution)
@@ -89,3 +88,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

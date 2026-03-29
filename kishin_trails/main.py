@@ -7,6 +7,7 @@ from fastapi import FastAPI, Depends
 from kishin_trails.database import engine, Base
 from kishin_trails.auth import router as auth_router
 from kishin_trails.poi import router as poi_router
+from kishin_trails.trails import router as trails_router
 from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
@@ -34,6 +35,8 @@ app = FastAPI(
 app.include_router(auth_router)
 if poi_router:
     app.include_router(poi_router)
+if trails_router:
+    app.include_router(trails_router)
 
 
 @app.get("/", summary="Root endpoint")
