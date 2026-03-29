@@ -25,6 +25,8 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
 
+    explored_tiles = relationship("Tile", secondary="user_explored_tiles", back_populates="explored_by")
+
 
 class Tile(Base):
     """Tile model representing an H3 hexagonal cell.
@@ -47,6 +49,7 @@ class Tile(Base):
         secondary="tile_post_processing_pois",
         back_populates="tiles"
     )
+    explored_by = relationship("User", secondary="user_explored_tiles", back_populates="explored_tiles")
 
 
 class POI(Base):
@@ -85,6 +88,14 @@ tile_post_processing_pois = Table(
     Base.metadata,
     Column("tile_h3_cell", String, ForeignKey("tiles.h3_cell"), primary_key=True),
     Column("post_processing_poi_id", Integer, ForeignKey("post_processing_pois.id"), primary_key=True)
+)
+
+
+user_explored_tiles = Table(
+    "user_explored_tiles",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    Column("tile_h3_cell", String, ForeignKey("tiles.h3_cell"), primary_key=True)
 )
 
 
