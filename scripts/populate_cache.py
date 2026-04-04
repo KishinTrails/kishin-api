@@ -30,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger("populate_cache")
 
 
-def insertOrGetPostProcessingPoi(osmId: int, name: str | None, tileType: str) -> int:
+def insertOrGetPostProcessingPoi(osmId: int, name: str | None, tileType: str):
     """Insert or get existing PostProcessingPoI. Returns the ID."""
     session = SESSION_LOCAL()
     try:
@@ -143,10 +143,6 @@ def populateCacheForTile(h3Cell: str) -> None:
                     retryDelay *= 2
                 else:
                     raise
-            except Exception as e:
-                logger.warning("Error loading elements for tile %s: %s", childCell, e)
-                gdf = None
-                break
 
         # Skip to next tile if gdf is None (error occurred)
         if gdf is None:

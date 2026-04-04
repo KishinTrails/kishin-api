@@ -100,6 +100,19 @@ user_explored_tiles = Table(
 
 
 class PostProcessingPoI(Base):
+    """Post-processed Point of Interest model for validated OSM elements.
+
+    Stores POIs that have been processed and validated after initial import,
+    separate from the raw POI data. Used for quality control and curation.
+
+    Attributes:
+        id: Primary key for the post-processed POI.
+        osm_id: Unique OpenStreetMap element ID.
+        name: Name of the POI from OSM tags.
+        tile_type: Type of POI (e.g., 'peak', 'natural', 'industrial').
+        tiles: Related Tile records associated with this POI.
+    """
+
     __tablename__ = "post_processing_pois"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
