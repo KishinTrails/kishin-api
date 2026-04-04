@@ -9,6 +9,12 @@ import logging
 from typing import TYPE_CHECKING, Any, List, Tuple
 from shapely.geometry import Point
 
+from kishin_trails.cache import getTile, setTile
+from kishin_trails.config import settings
+from kishin_trails.utils import sanitizeValue, pointInH3Hexagon, getH3Circle
+from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.overpass import loadElementsAt
+
 if TYPE_CHECKING:
     from fastapi import APIRouter, HTTPException, Query, Depends
     from fastapi.responses import JSONResponse
@@ -22,12 +28,6 @@ try:
     from fastapi.responses import JSONResponse
 except ImportError:  # pragma: no cover
     JSONResponse = None  # type: ignore[assignment]
-
-from kishin_trails.cache import getTile, setTile
-from kishin_trails.config import settings
-from kishin_trails.utils import sanitizeValue, pointInH3Hexagon, getH3Circle
-from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.overpass import loadElementsAt
 
 logging.basicConfig(
     level=logging.WARN,
@@ -285,18 +285,17 @@ def getPoiDataForCell(h3Cell: str) -> dict | None:
 
     # ============================================================================================
     # This is temporary.
-    else:
-        # Return an empty result if the cell is not in cache to avoid expensive
-        # Overpass queries for now.
-        return formatPoiFromCache(
-            {
-                "tile_type": None,
-                "pois": [],
-            },
-            h3Cell,
-            lat,
-            lng,
-        )
+    # Return an empty result if the cell is not in cache to avoid expensive
+    # Overpass queries for now.
+    return formatPoiFromCache(
+        {
+            "tile_type": None,
+            "pois": [],
+        },
+        h3Cell,
+        lat,
+        lng,
+    )
     # ============================================================================================
 
     gdf = loadElementsAt(lat, lng, radiusM)
@@ -365,7 +364,7 @@ if router:
         summary="Get POI for multiple H3 cells",
         response_class=JSONResponse,
     )
-    def getPoIByCells(h3Cells: List[str] = Query(
+    def getPoiByCells(h3Cells: List[str] = Query(
         ...,
         description="List of H3 hexagonal cell identifiers.",
     )):

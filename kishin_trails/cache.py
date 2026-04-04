@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import joinedload
 
-from kishin_trails.database import SESSION_LOCAL
+from kishin_trails.database import SESSION_LOCAL, engine, Base
 from kishin_trails.models import PostProcessingPoI, Tile, POI
 
 logging.basicConfig(
@@ -28,8 +28,6 @@ def initDb() -> None:
     
     Creates all necessary tables in the database if they don't exist.
     """
-    from kishin_trails.database import engine
-    from kishin_trails.database import Base
     Base.metadata.create_all(bind=engine)
     logger.info("POI cache tables initialized")
 

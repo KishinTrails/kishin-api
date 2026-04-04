@@ -7,11 +7,11 @@ import sys
 import os
 import gpx
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from kishin_trails.database import SESSION_LOCAL
 from kishin_trails.models import Tile, User
 from kishin_trails.utils import getH3Cell
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,4 +113,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -4,9 +4,14 @@ Trails module for user exploration tracking.
 Provides API endpoints for user explored tiles.
 """
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
+
+from kishin_trails.database import getDb
+from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.models import User
+from kishin_trails.schemas import ExploredTilesOut
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, Depends
@@ -16,16 +21,10 @@ try:
 except ImportError:  # pragma: no cover
     APIRouter = None  # type: ignore[assignment]
 
-from kishin_trails.database import getDb
-from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.models import User
-from kishin_trails.schemas import ExploredTilesOut
-
 if APIRouter:
     router = APIRouter(prefix="/trails", tags=["trails"], dependencies=[Depends(getCurrentUser)])
 else:
     router = None
-
 
 if router:
 
@@ -36,7 +35,7 @@ if router:
     )
     def getExploredTiles(
         currentUser: User = Depends(getCurrentUser),
-        dbSession: Session = Depends(getDb),
+        _dbSession: Session = Depends(getDb),
     ):
         """Get list of H3 cell IDs explored by the current user.
 
@@ -44,4 +43,7 @@ if router:
             List of explored H3 cell identifiers.
         """
         explored = [tile.h3_cell for tile in currentUser.explored_tiles]
-        return {"explored": explored}
+        return {
+            "explored": explored
+        }
+

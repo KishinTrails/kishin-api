@@ -1,0 +1,21 @@
+name: Pylint
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.14
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.14"
+    - name: Install deps
+      run: pip install poetry && poetry install
+    - name: Run pytest
+      run: poetry run pytest --cov kishin_trails --cov-report=term-missing
