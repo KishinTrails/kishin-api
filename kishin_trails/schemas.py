@@ -111,3 +111,17 @@ class ExploredTilesOut(BaseModel):
     """
 
     explored: List[str]
+
+
+class NoiseRequest(BaseModel):
+    """Request model for noise calculation."""
+
+    cells: List[str]
+    scale: int = 50
+
+
+class NoiseResponse(BaseModel):
+    """Response model for single cell noise value."""
+
+    cell: str
+    noise: float
