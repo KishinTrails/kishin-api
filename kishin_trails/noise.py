@@ -47,21 +47,21 @@ async def get_cell_noise(request: NoiseRequest):
     """
     if not request.cells:
         return []
-    
+
     # Limit batch size to prevent abuse
     if len(request.cells) > 1000:
-        raise HTTPException(
-            status_code=400,
-            detail="Maximum 1000 cells per request"
-        )
-    
+        raise HTTPException(status_code=400, detail="Maximum 1000 cells per request")
+
     results = []
     for cell in request.cells:
         try:
             noise_value = get_noise_for_cell(cell, request.scale)
-            results.append({"cell": cell, "noise": noise_value})
+            results.append({
+                "cell": cell,
+                "noise": noise_value
+            })
         except Exception:
             # Skip invalid cells, continue with others
             continue
-    
+
     return results

@@ -29,10 +29,6 @@ try:
 except ImportError:  # pragma: no cover
     JSONResponse = None  # type: ignore[assignment]
 
-logging.basicConfig(
-    level=logging.WARN,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
 logger = logging.getLogger("PoI")
 
 DEFAULT_CENTER_LAT = settings.DEFAULT_CENTER_LAT

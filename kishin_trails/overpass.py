@@ -20,10 +20,6 @@ from shapely.ops import linemerge, polygonize, unary_union
 
 from kishin_trails.config import settings
 
-logging.basicConfig(
-    level=logging.WARN,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
 logger = logging.getLogger("overpass")
 
 OVERPASS_URL = settings.OVERPASS_URL
