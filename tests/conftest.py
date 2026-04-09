@@ -20,13 +20,15 @@ from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User, Tile, POI
 
 # --- Test Database Setup ---
-# We still use in-memory for speed in the fixtures, 
+# We still use in-memory for speed in the fixtures,
 # but the env var above protects us from accidental disk writes to kishin.db.
 SQLALCHEMY_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={
+        "check_same_thread": False
+    },
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -34,6 +36,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 # Monkey-patch cache module to use test database
 import kishin_trails.database as database_module
 import kishin_trails.cache as cache_module
+
 database_module.SESSION_LOCAL = TestingSessionLocal
 cache_module.SESSION_LOCAL = TestingSessionLocal
 
@@ -58,7 +61,6 @@ async def client(db_session):
     Fixture to provide an AsyncClient for FastAPI testing,
     overriding the database dependency.
     """
-
     def override_get_db():
         try:
             yield db_session
@@ -97,11 +99,11 @@ def cache_with_data():
     """
     import kishin_trails.cache as cache_module
     import kishin_trails.database as db_module
-    
+
     # Ensure we're using the patched version
     cache_module.SESSION_LOCAL = TestingSessionLocal
     db_module.SESSION_LOCAL = TestingSessionLocal
-    
+
     from kishin_trails.cache import setTile
 
     def _set_tile(h3_cell: str, tile_type: str | None, pois: list):
