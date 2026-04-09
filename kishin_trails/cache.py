@@ -191,6 +191,11 @@ def getTiles(h3Cells: List[str]) -> Dict[str, Dict[str, Any] | None]:
 def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) -> None:
     """Store a tile and its POIs in the cache.
 
+    This function is idempotent:
+    - If tile exists, tile_type is preserved (never updated)
+    - Only missing POIs are inserted (by osm_id)
+    - Existing POIs are never modified or deleted
+
     Args:
         h3Cell: The H3 cell identifier.
         tileType: Type of POI in the tile (e.g., 'peak', 'natural', 'industrial').
@@ -200,23 +205,27 @@ def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) ->
     try:
         tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
         if tile:
-            tile.tile_type = tileType
+            pass
         else:
             tile = Tile(h3_cell=h3Cell, tile_type=tileType)
             session.add(tile)
 
-        session.query(POI).filter(POI.h3_cell == h3Cell).delete()
+        existingOsmIds = {
+            poi.osm_id
+            for poi in session.query(POI.osm_id).filter(POI.h3_cell == h3Cell).all()
+        }
 
         for poiData in pois:
-            poi = POI(
-                h3_cell=h3Cell,
-                osm_id=poiData["osm_id"],
-                name=poiData.get("name"),
-                lat=poiData["lat"],
-                lon=poiData["lon"],
-                elevation=poiData.get("elevation")
-            )
-            session.add(poi)
+            if poiData["osm_id"] not in existingOsmIds:
+                poi = POI(
+                    h3_cell=h3Cell,
+                    osm_id=poiData["osm_id"],
+                    name=poiData.get("name"),
+                    lat=poiData["lat"],
+                    lon=poiData["lon"],
+                    elevation=poiData.get("elevation")
+                )
+                session.add(poi)
 
         session.commit()
         logger.info("Cached tile %s with %d pois", h3Cell, len(pois))

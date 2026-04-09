@@ -92,11 +92,13 @@ def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
         session.close()
 
 
-def populateCacheForTile(h3Cell: str) -> None:
+def populateCacheForTile(h3Cell: str, skipCached: bool = True) -> None:
     """Populate cache for a single H3 tile.
     
     Args:
         h3Cell: H3 cell identifier.
+        skipCached: If True, skip tiles that already exist in database.
+                   If False, re-process all tiles (for --no-cache mode).
     """
     res = h3.get_resolution(h3Cell)
     if res > 10:
@@ -114,7 +116,7 @@ def populateCacheForTile(h3Cell: str) -> None:
     for childCell in tqdm(children, desc="Populating cache"):
         # Check if already cached
         existing = getTile(childCell)
-        if existing:
+        if existing and skipCached:
             logger.debug("Tile %s already cached, skipping", childCell)
             continue
 
@@ -236,6 +238,11 @@ def main() -> None:
         help="Run polygon interior filling after processing tiles"
     )
     parser.add_argument("--fill-only", action="store_true", help="Only run polygon filling, skip tile processing")
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Re-process all tiles, inserting only missing POIs (preserve existing data)"
+    )
 
     args = parser.parse_args()
 
@@ -267,7 +274,8 @@ def main() -> None:
             children = [h3Cell]
         logger.info("Dry run: would process %d level 10 tiles", len(children))
     else:
-        populateCacheForTile(h3Cell)
+        skipCached = not args.no_cache
+        populateCacheForTile(h3Cell, skipCached=skipCached)
 
     if args.fill_polygons:
         fillPolygonInteriors()
