@@ -11,15 +11,262 @@ from typing import Tuple
 # Exact permutation table from frontend (256 elements)
 # This must match PerlinNoiseOverlay.vue exactly for parity
 PERMUTATION_BASE = [
-    151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,
-    247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,
-    74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,
-    54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,
-    3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,
-    170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,
-    185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,
-    31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,
-    78,66,215,61,156,180
+    151,
+    160,
+    137,
+    91,
+    90,
+    15,
+    131,
+    13,
+    201,
+    95,
+    96,
+    53,
+    194,
+    233,
+    7,
+    225,
+    140,
+    36,
+    103,
+    30,
+    69,
+    142,
+    8,
+    99,
+    37,
+    240,
+    21,
+    10,
+    23,
+    190,
+    6,
+    148,
+    247,
+    120,
+    234,
+    75,
+    0,
+    26,
+    197,
+    62,
+    94,
+    252,
+    219,
+    203,
+    117,
+    35,
+    11,
+    32,
+    57,
+    177,
+    33,
+    88,
+    237,
+    149,
+    56,
+    87,
+    174,
+    20,
+    125,
+    136,
+    171,
+    168,
+    68,
+    175,
+    74,
+    165,
+    71,
+    134,
+    139,
+    48,
+    27,
+    166,
+    77,
+    146,
+    158,
+    231,
+    83,
+    111,
+    229,
+    122,
+    60,
+    211,
+    133,
+    230,
+    220,
+    105,
+    92,
+    41,
+    55,
+    46,
+    245,
+    40,
+    244,
+    102,
+    143,
+    54,
+    65,
+    25,
+    63,
+    161,
+    1,
+    216,
+    80,
+    73,
+    209,
+    76,
+    132,
+    187,
+    208,
+    89,
+    18,
+    169,
+    200,
+    196,
+    135,
+    130,
+    116,
+    188,
+    159,
+    86,
+    164,
+    100,
+    109,
+    198,
+    173,
+    186,
+    3,
+    64,
+    52,
+    217,
+    226,
+    250,
+    124,
+    123,
+    5,
+    202,
+    38,
+    147,
+    118,
+    126,
+    255,
+    82,
+    85,
+    212,
+    207,
+    206,
+    59,
+    227,
+    47,
+    16,
+    58,
+    17,
+    182,
+    189,
+    28,
+    42,
+    223,
+    183,
+    170,
+    213,
+    119,
+    248,
+    152,
+    2,
+    44,
+    154,
+    163,
+    70,
+    221,
+    153,
+    101,
+    155,
+    167,
+    43,
+    172,
+    9,
+    129,
+    22,
+    39,
+    253,
+    19,
+    98,
+    108,
+    110,
+    79,
+    113,
+    224,
+    232,
+    178,
+    185,
+    112,
+    104,
+    218,
+    246,
+    97,
+    228,
+    251,
+    34,
+    242,
+    193,
+    238,
+    210,
+    144,
+    12,
+    191,
+    179,
+    162,
+    241,
+    81,
+    51,
+    145,
+    235,
+    249,
+    14,
+    239,
+    107,
+    49,
+    192,
+    214,
+    31,
+    181,
+    199,
+    106,
+    157,
+    184,
+    84,
+    204,
+    176,
+    115,
+    121,
+    50,
+    45,
+    127,
+    4,
+    150,
+    254,
+    138,
+    236,
+    205,
+    93,
+    222,
+    114,
+    67,
+    29,
+    24,
+    72,
+    243,
+    141,
+    128,
+    195,
+    78,
+    66,
+    215,
+    61,
+    156,
+    180
 ]
 
 # Duplicate permutation table for wraparound (matches frontend implementation)
@@ -39,7 +286,7 @@ def fade(t: float) -> float:
     Returns:
         Smoothed value
     """
-    return t * t * t * (t * (t * 6 - 15) + 10)
+    return t * t * t * (t * (t*6 - 15) + 10)
 
 
 def lerp(a: float, b: float, t: float) -> float:
@@ -57,7 +304,7 @@ def lerp(a: float, b: float, t: float) -> float:
     Returns:
         Interpolated value
     """
-    return a + t * (b - a)
+    return a + t * (b-a)
 
 
 def grad(hash_val: int, x: float, y: float) -> float:
@@ -98,19 +345,31 @@ def perlin(x: float, y: float) -> float:
     """
     X = int(math.floor(x)) & 255
     Y = int(math.floor(y)) & 255
-    
+
     x -= math.floor(x)
     y -= math.floor(y)
-    
+
     u = fade(x)
     v = fade(y)
-    
+
     A = PERMUTATION[X] + Y
     B = PERMUTATION[X + 1] + Y
-    
+
     return lerp(
-        lerp(grad(PERMUTATION[A], x, y), grad(PERMUTATION[B], x - 1, y), u),
-        lerp(grad(PERMUTATION[A + 1], x, y - 1), grad(PERMUTATION[B + 1], x - 1, y - 1), u),
+        lerp(grad(PERMUTATION[A],
+                  x,
+                  y),
+             grad(PERMUTATION[B],
+                  x - 1,
+                  y),
+             u),
+        lerp(grad(PERMUTATION[A + 1],
+                  x,
+                  y - 1),
+             grad(PERMUTATION[B + 1],
+                  x - 1,
+                  y - 1),
+             u),
         v
     )
 
@@ -137,15 +396,15 @@ def get_noise_value(merc_x: float, merc_y: float, scale: int) -> float:
     value = 0.0
     amplitude = 1.0
     frequency = scale * 500  # Exact formula from frontend
-    
+
     # 3 octaves like frontend
     for _ in range(3):
         value += perlin(merc_x * frequency, merc_y * frequency) * amplitude
         amplitude *= 0.5
         frequency *= 2
-    
+
     # Normalize to [0, 1] range like frontend
-    return (value + 1) / 2
+    return (value+1) / 2
 
 
 def latlng_to_mercator(lat: float, lng: float) -> Tuple[float, float]:
@@ -165,22 +424,25 @@ def latlng_to_mercator(lat: float, lng: float) -> Tuple[float, float]:
     """
     import geopandas as gpd
     from shapely.geometry import Point
-    
+
     # Create point in WGS84 (EPSG:4326)
     point = Point(lng, lat)
-    gdf = gpd.GeoDataFrame([{'geometry': point}], crs='EPSG:4326')
-    
+    gdf = gpd.GeoDataFrame([{
+        'geometry': point
+    }],
+                           crs='EPSG:4326')
+
     # Transform to Web Mercator (EPSG:3857)
     gdf_merc = gdf.to_crs('EPSG:3857')
     merc_point = gdf_merc.iloc[0]['geometry']
-    
+
     # Normalize to 0-1 range
     # Web Mercator bounds: -20037508.34 to +20037508.34 meters
     # This matches MapLibre's coordinate system
     world_size = 20037508.34 * 2
     merc_x = (merc_point.x + 20037508.34) / world_size
     merc_y = (20037508.34 - merc_point.y) / world_size  # Y is inverted
-    
+
     return merc_x, merc_y
 
 
@@ -202,13 +464,21 @@ def get_noise_for_cell(cell: str, scale: int) -> float:
     Returns:
         Noise value in range [0, 1]
     """
+    from kishin_trails.noise_cache import get_cached_noise, set_cached_noise
     import h3
-    
+
+    cached = get_cached_noise(cell, scale)
+    if cached is not None:
+        return cached
+
     # Get cell center coordinates
     lat, lng = h3.cell_to_latlng(cell)
-    
+
     # Convert to Mercator coordinates
     merc_x, merc_y = latlng_to_mercator(lat, lng)
-    
+
     # Get noise value using the same algorithm as frontend
-    return get_noise_value(merc_x, merc_y, scale)
+    value = get_noise_value(merc_x, merc_y, scale)
+
+    set_cached_noise(cell, scale, value)
+    return value

@@ -14,10 +14,6 @@ from sqlalchemy.orm import joinedload
 from kishin_trails.database import SESSION_LOCAL, engine, Base
 from kishin_trails.models import PostProcessingPoI, Tile, POI
 
-logging.basicConfig(
-    level=logging.WARN,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
 logger = logging.getLogger("cache")
 
 CHUNK_SIZE = 1000
