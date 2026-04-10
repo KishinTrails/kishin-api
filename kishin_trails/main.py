@@ -17,8 +17,14 @@ from kishin_trails.models import User
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan event to handle startup and shutdown tasks.
-    Creates database tables on startup.
+    Application lifespan manager for startup and shutdown events.
+
+    Handles initialization tasks when the application starts:
+    - Creates all database tables from SQLAlchemy models
+    - Initializes the POI cache database tables
+
+    Yields control back to FastAPI to run the application, then handles
+    cleanup on shutdown (if needed in the future).
     """
     Base.metadata.create_all(bind=engine)
     initCacheDb()
@@ -45,7 +51,13 @@ if noise_router:
 @app.get("/", summary="Root endpoint")
 def readRoot():
     """
-    Public root endpoint to verify the API is running.
+    Root endpoint providing API welcome message and documentation pointer.
+
+    This is a public endpoint that confirms the API server is running and
+    directs users to the interactive API documentation.
+
+    Returns:
+        Welcome message with pointer to /docs endpoint.
     """
     return {
         "message": "Welcome to Kishin Trails' API. Go to /docs for the API documentation."
@@ -55,7 +67,19 @@ def readRoot():
 @app.get("/me", summary="Get current user info")
 def readUsersMe(currentUser: User = Depends(getCurrentUser)):
     """
-    Guarded endpoint to return the currently authenticated user's information.
+    Retrieve the authenticated user's profile information.
+
+    This is a protected endpoint that requires a valid JWT token. It returns
+    basic user information for the currently authenticated user.
+
+    Args:
+        currentUser: The authenticated user extracted from JWT token.
+
+    Returns:
+        Dictionary containing username and user ID.
+
+    Raises:
+        HTTPException 401: If authentication fails or token is invalid.
     """
     return {
         "username": currentUser.username,

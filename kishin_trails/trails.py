@@ -1,7 +1,8 @@
 """
 Trails module for user exploration tracking.
 
-Provides API endpoints for user explored tiles.
+Provides API endpoints for managing and retrieving user-explored H3 tiles,
+allowing users to track their exploration progress across the map.
 """
 
 from typing import TYPE_CHECKING
@@ -37,10 +38,18 @@ if router:
         currentUser: User = Depends(getCurrentUser),
         _dbSession: Session = Depends(getDb),
     ):
-        """Get list of H3 cell IDs explored by the current user.
+        """
+        Retrieve all H3 cells marked as explored by the authenticated user.
+
+        This endpoint returns the complete list of H3 hexagonal cell identifiers
+        that the user has explored, typically populated via GPX track imports.
+
+        Args:
+            currentUser: The authenticated user from JWT token.
+            _dbSession: Database session for querying.
 
         Returns:
-            List of explored H3 cell identifiers.
+            Dictionary containing a list of explored H3 cell identifiers.
         """
         explored = [tile.h3_cell for tile in currentUser.explored_tiles]
         return {
