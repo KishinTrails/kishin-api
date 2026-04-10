@@ -33,7 +33,7 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Monkey-patch cache module to use test database
+# Monkey-patch modules to use test database
 import kishin_trails.database as database_module
 import kishin_trails.cache as cache_module
 

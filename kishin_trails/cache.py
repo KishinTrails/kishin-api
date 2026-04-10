@@ -192,7 +192,8 @@ def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) ->
     """Store a tile and its POIs in the cache.
 
     This function is idempotent:
-    - If tile exists, tile_type is preserved (never updated)
+    - If tile exists with NULL tile_type, it is updated (completes partial tiles)
+    - If tile exists with non-NULL tile_type, it is preserved
     - Only missing POIs are inserted (by osm_id)
     - Existing POIs are never modified or deleted
 
@@ -205,15 +206,15 @@ def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) ->
     try:
         tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
         if tile:
-            pass
+            # Update tile_type only if currently NULL (completes partial tiles)
+            if tile.tile_type is None and tileType is not None:
+                tile.tile_type = tileType
         else:
             tile = Tile(h3_cell=h3Cell, tile_type=tileType)
             session.add(tile)
 
-        existingOsmIds = {
-            poi.osm_id
-            for poi in session.query(POI.osm_id).filter(POI.h3_cell == h3Cell).all()
-        }
+        existingOsmIds = {poi.osm_id
+                          for poi in session.query(POI.osm_id).filter(POI.h3_cell == h3Cell).all()}
 
         for poiData in pois:
             if poiData["osm_id"] not in existingOsmIds:
