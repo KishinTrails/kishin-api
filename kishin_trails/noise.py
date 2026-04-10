@@ -17,7 +17,7 @@ try:
 except ImportError:
     JSONResponse = None
 
-from kishin_trails.perlin import get_noise_for_cell
+from kishin_trails.perlin import getNoiseForCell
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.schemas import NoiseRequest, NoiseResponse
 
@@ -28,7 +28,7 @@ else:
 
 
 @router.post("/cells", response_model=List[NoiseResponse])
-async def get_cell_noise(request: NoiseRequest):
+async def getCellNoise(request: NoiseRequest):
     """
     Get Perlin noise values for multiple H3 cells.
     
@@ -55,10 +55,10 @@ async def get_cell_noise(request: NoiseRequest):
     results = []
     for cell in request.cells:
         try:
-            noise_value = get_noise_for_cell(cell, request.scale)
+            noiseValue = getNoiseForCell(cell, request.scale)
             results.append({
                 "cell": cell,
-                "noise": noise_value
+                "noise": noiseValue
             })
         except Exception:
             # Skip invalid cells, continue with others

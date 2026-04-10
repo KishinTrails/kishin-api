@@ -8,7 +8,7 @@ _CACHE_FILE = Path(__file__).parent.parent / "cache" / "noise_cache.pkl"
 _cache: Dict[Tuple[str, int], float] = {}
 
 
-def load_cache() -> None:
+def loadCache() -> None:
     """Load cache from pickle file if it exists."""
     global _cache
     if _CACHE_FILE.exists():
@@ -19,14 +19,14 @@ def load_cache() -> None:
             _cache = {}
 
 
-def save_cache() -> None:
+def saveCache() -> None:
     """Save cache to pickle file."""
     _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(_CACHE_FILE, "wb") as f:
         pickle.dump(_cache, f)
 
 
-def clear_cache() -> None:
+def clearCache() -> None:
     """Clear cache and remove cache file."""
     global _cache
     _cache = {}
@@ -34,12 +34,12 @@ def clear_cache() -> None:
         _CACHE_FILE.unlink()
 
 
-def get_cached_noise(cell: str, scale: int) -> float | None:
+def getCachedNoise(cell: str, scale: int) -> float | None:
     """Get cached noise value if available."""
     return _cache.get((cell, scale))
 
 
-def set_cached_noise(cell: str, scale: int, value: float) -> None:
+def setCachedNoise(cell: str, scale: int, value: float) -> None:
     """Set and persist a noise value in cache."""
     _cache[(cell, scale)] = value
-    save_cache()
+    saveCache()
