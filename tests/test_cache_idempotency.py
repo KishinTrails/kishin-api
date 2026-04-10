@@ -552,6 +552,8 @@ class TestSetTileIdempotency:
         setTile(h3_test_cell, "natural", pois)
         tile2 = getTile(h3_test_cell)
 
+        assert tile1 is not None
+        assert tile2 is not None
         assert tile1 == tile2
         assert len(tile1["pois"]) == 2
 
@@ -589,6 +591,7 @@ class TestSetTileIdempotency:
 
         # Verify both POIs exist
         tile = getTile(h3_test_cell)
+        assert tile is not None
         osm_ids = {poi["osm_id"]
                    for poi in tile["pois"]}
 
@@ -620,6 +623,7 @@ class TestSetTileIdempotency:
 
         # Verify original data preserved
         tile = getTile(h3_test_cell)
+        assert tile is not None
         poi = tile["pois"][0]
 
         assert poi["name"] == "Original Name"
