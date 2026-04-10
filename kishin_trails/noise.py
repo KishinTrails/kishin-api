@@ -5,17 +5,21 @@ Provides API endpoints for querying Perlin noise values for H3 cells,
 computed server-side with 100% parity to the frontend implementation.
 """
 
-from typing import List
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter, HTTPException, Depends
+    from fastapi.responses import JSONResponse
 
 try:
     from fastapi import APIRouter, HTTPException, Depends
-except ImportError:
-    APIRouter = HTTPException = Depends = None
+except ImportError:  # pragma: no cover
+    APIRouter = HTTPException = Depends = None  # type: ignore[assignment]
 
 try:
     from fastapi.responses import JSONResponse
-except ImportError:
-    JSONResponse = None
+except ImportError:  # pragma: no cover
+    JSONResponse = None  # type: ignore[assignment]
 
 from kishin_trails.perlin import getNoiseForCell
 from kishin_trails.dependencies import getCurrentUser
@@ -27,7 +31,7 @@ else:
     router = None
 
 
-@router.post("/cells", response_model=List[NoiseResponse])
+@router.post("/cells", response_model=List[NoiseResponse])  # type: ignore[union-attr]
 async def getCellNoise(request: NoiseRequest):
     """
     Get Perlin noise values for multiple H3 cells.
