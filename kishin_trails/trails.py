@@ -46,4 +46,3 @@ if router:
         return {
             "explored": explored
         }
-

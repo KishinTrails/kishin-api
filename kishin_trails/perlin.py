@@ -6,7 +6,13 @@ to ensure identical noise values for the same coordinates.
 """
 
 import math
+import geopandas as gpd
+
+from shapely.geometry import Point
 from typing import Tuple
+
+from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
+import h3
 
 # Exact permutation table from frontend (256 elements)
 # This must match PerlinNoiseOverlay.vue exactly for parity
@@ -273,16 +279,17 @@ PERMUTATION_BASE = [
 PERMUTATION = PERMUTATION_BASE + PERMUTATION_BASE
 
 
+# pylint: disable=invalid-name
 def fade(t: float) -> float:
     """
     Smoothstep function for smooth interpolation.
-    
+
     This is the exact same fade function as the frontend:
     t*t*t*(t*(t*6 - 15) + 10)
-    
+
     Args:
         t: Input value (typically between 0 and 1)
-    
+
     Returns:
         Smoothed value
     """
@@ -292,15 +299,15 @@ def fade(t: float) -> float:
 def lerp(a: float, b: float, t: float) -> float:
     """
     Linear interpolation between two values.
-    
+
     This is the exact same lerp function as the frontend:
     a + t * (b - a)
-    
+
     Args:
         a: First value
         b: Second value
         t: Interpolation factor (0 = all a, 1 = all b)
-    
+
     Returns:
         Interpolated value
     """
@@ -310,14 +317,14 @@ def lerp(a: float, b: float, t: float) -> float:
 def grad(hash_val: int, x: float, y: float) -> float:
     """
     Compute gradient based on hash value.
-    
+
     This picks one of 4 directions based on the hash, exactly like the frontend.
-    
+
     Args:
         hash_val: Hash value to determine gradient direction
         x: Distance in X direction
         y: Distance in Y direction
-    
+
     Returns:
         Gradient value
     """
@@ -328,18 +335,18 @@ def grad(hash_val: int, x: float, y: float) -> float:
 def perlin(x: float, y: float) -> float:
     """
     Classic Perlin noise at coordinates (x, y).
-    
+
     Uses the exact same algorithm as the frontend for parity:
     1. Find grid cell
     2. Calculate local coordinates within cell
     3. Apply fade function for smoothness
     4. Get gradients at 4 corners
     5. Interpolate between corners
-    
+
     Args:
         x: X coordinate in noise space
         y: Y coordinate in noise space
-    
+
     Returns:
         Noise value (typically in range [-1, 1] before normalization)
     """
@@ -374,22 +381,25 @@ def perlin(x: float, y: float) -> float:
     )
 
 
-def get_noise_value(merc_x: float, merc_y: float, scale: int) -> float:
+# pylint: enable=invalid-name
+
+
+def getNoiseValue(mercX: float, mercY: float, scale: int) -> float:
     """
     Multi-octave Perlin noise at Mercator coordinates.
-    
+
     This replicates the frontend's getNoiseValue function exactly:
     - 3 octaves of noise
     - frequency = scale * 500
     - amplitude starts at 1.0, multiplied by 0.5 each octave
     - frequency multiplied by 2 each octave
     - Final normalization: (value + 1) / 2
-    
+
     Args:
-        merc_x: X coordinate in Mercator space (0-1 range, like MapLibre)
-        merc_y: Y coordinate in Mercator space (0-1 range, like MapLibre)
+        mercX: X coordinate in Mercator space (0-1 range, like MapLibre)
+        mercY: Y coordinate in Mercator space (0-1 range, like MapLibre)
         scale: Noise scale factor (same as frontend scale parameter)
-    
+
     Returns:
         Noise value in range [0, 1]
     """
@@ -399,7 +409,7 @@ def get_noise_value(merc_x: float, merc_y: float, scale: int) -> float:
 
     # 3 octaves like frontend
     for _ in range(3):
-        value += perlin(merc_x * frequency, merc_y * frequency) * amplitude
+        value += perlin(mercX * frequency, mercY * frequency) * amplitude
         amplitude *= 0.5
         frequency *= 2
 
@@ -407,24 +417,21 @@ def get_noise_value(merc_x: float, merc_y: float, scale: int) -> float:
     return (value+1) / 2
 
 
-def latlng_to_mercator(lat: float, lng: float) -> Tuple[float, float]:
+def latLngToMercator(lat: float, lng: float) -> Tuple[float, float]:
     """
     Convert latitude/longitude to Web Mercator coordinates (0-1 range).
-    
+
     Uses geopandas to transform coordinates from WGS84 (EPSG:4326) to
     Web Mercator (EPSG:3857), then normalizes to 0-1 range to match
     MapLibre's MercatorCoordinate.fromLngLat().
-    
+
     Args:
         lat: Latitude in degrees
         lng: Longitude in degrees
-    
+
     Returns:
         Tuple of (merc_x, merc_y) in 0-1 range, matching MapLibre's output
     """
-    import geopandas as gpd
-    from shapely.geometry import Point
-
     # Create point in WGS84 (EPSG:4326)
     point = Point(lng, lat)
     gdf = gpd.GeoDataFrame([{
@@ -433,41 +440,38 @@ def latlng_to_mercator(lat: float, lng: float) -> Tuple[float, float]:
                            crs='EPSG:4326')
 
     # Transform to Web Mercator (EPSG:3857)
-    gdf_merc = gdf.to_crs('EPSG:3857')
-    merc_point = gdf_merc.iloc[0]['geometry']
+    gdfMerc = gdf.to_crs('EPSG:3857')
+    mercPoint = gdfMerc.iloc[0]['geometry']
 
     # Normalize to 0-1 range
     # Web Mercator bounds: -20037508.34 to +20037508.34 meters
     # This matches MapLibre's coordinate system
-    world_size = 20037508.34 * 2
-    merc_x = (merc_point.x + 20037508.34) / world_size
-    merc_y = (20037508.34 - merc_point.y) / world_size  # Y is inverted
+    worldSize = 20037508.34 * 2
+    mercX = (mercPoint.x + 20037508.34) / worldSize
+    mercY = (20037508.34 - mercPoint.y) / worldSize  # Y is inverted
 
-    return merc_x, merc_y
+    return mercX, mercY
 
 
-def get_noise_for_cell(cell: str, scale: int) -> float:
+def getNoiseForCell(cell: str, scale: int) -> float:
     """
     Get Perlin noise value for an H3 cell by sampling its center.
-    
+
     This is the main entry point for getting noise values for H3 cells.
     It:
     1. Gets the cell center coordinates using h3.cell_to_latlng()
     2. Converts to Mercator coordinates
     3. Computes multi-octave Perlin noise
     4. Returns normalized value in [0, 1] range
-    
+
     Args:
         cell: H3 cell index (resolution 10)
         scale: Noise scale factor (same as frontend scale parameter)
-    
+
     Returns:
         Noise value in range [0, 1]
     """
-    from kishin_trails.noise_cache import get_cached_noise, set_cached_noise
-    import h3
-
-    cached = get_cached_noise(cell, scale)
+    cached = getCachedNoise(cell, scale)
     if cached is not None:
         return cached
 
@@ -475,10 +479,10 @@ def get_noise_for_cell(cell: str, scale: int) -> float:
     lat, lng = h3.cell_to_latlng(cell)
 
     # Convert to Mercator coordinates
-    merc_x, merc_y = latlng_to_mercator(lat, lng)
+    mercX, mercY = latLngToMercator(lat, lng)
 
     # Get noise value using the same algorithm as frontend
-    value = get_noise_value(merc_x, merc_y, scale)
+    value = getNoiseValue(mercX, mercY, scale)
 
-    set_cached_noise(cell, scale, value)
+    setCachedNoise(cell, scale, value)
     return value
