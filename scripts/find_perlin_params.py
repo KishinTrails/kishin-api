@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Test Perlin noise parameters against H3 cells with configurable conditions."""
+"""
+Test Perlin noise parameters against H3 cells with configurable conditions.
+
+This script helps find optimal Perlin noise parameters (scale and threshold)
+that satisfy specific activation patterns across a set of H3 cells. It tests
+combinations of parameters against user-defined conditions to find configurations
+that produce desired noise activation patterns.
+"""
 
 import argparse
 import json
@@ -12,13 +19,33 @@ from kishin_trails.perlin import getNoiseForCell
 
 
 def loadConfig(configPath: str) -> dict[str, Any]:
-    """Load configuration from JSON file."""
+    """
+    Load configuration from a JSON file.
+
+    Args:
+        configPath: Path to the JSON configuration file.
+
+    Returns:
+        Dictionary containing configuration with conditions and state_space.
+    """
     with open(configPath, "r") as f:
         return json.load(f)
 
 
 def isActive(cell: str, scale: int, threshold: float) -> bool:
-    """Check if a cell is active (noise value > threshold)."""
+    """
+    Determine if an H3 cell is considered 'active' based on its noise value.
+
+    A cell is active when its Perlin noise value exceeds the threshold.
+
+    Args:
+        cell: H3 cell identifier.
+        scale: Noise scale parameter.
+        threshold: Threshold value for activation (0-1 range).
+
+    Returns:
+        True if noise value exceeds threshold, False otherwise.
+    """
     noiseValue = getNoiseForCell(cell, scale)
     return noiseValue > threshold
 
@@ -78,10 +105,19 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
 
 def testParameters(conditions: list[dict[str, Any]], scale: int, threshold: float) -> tuple[bool, list[str]]:
     """
-    Test if all conditions are satisfied for given parameters.
-  
+    Evaluate all conditions against the given scale and threshold parameters.
+
+    Iterates through each condition and checks if it's satisfied by the
+    current parameter combination.
+
+    Args:
+        conditions: List of condition dictionaries to evaluate.
+        scale: Noise scale parameter to test.
+        threshold: Noise threshold value to test.
+
     Returns:
-        Tuple of (all_satisfied, list of condition messages)
+        Tuple of (all_satisfied, list of condition result messages).
+        all_satisfied is True only if every condition passes.
     """
     results = []
     allSatisfied = True
@@ -96,7 +132,19 @@ def testParameters(conditions: list[dict[str, Any]], scale: int, threshold: floa
 
 
 def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[int, float]]:
-    """Generate all (scale, threshold) combinations from state space config."""
+    """
+    Generate all parameter combinations from the state space configuration.
+
+    Creates a grid of (scale, threshold) pairs by iterating through the
+    configured ranges with specified step sizes.
+
+    Args:
+        stateSpace: Dictionary with 'scale' and 'threshold' range configs,
+                    each containing 'min', 'max', and optional 'step'.
+
+    Returns:
+        List of (scale, threshold) tuples representing all combinations.
+    """
     scaleConfig = stateSpace["scale"]
     thresholdConfig = stateSpace["threshold"]
 
@@ -124,7 +172,16 @@ def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[in
 
 
 def main():
-    """Main entry point."""
+    """
+    Main entry point for the Perlin noise parameter testing script.
+
+    Orchestrates the parameter search process:
+    1. Parses command-line arguments
+    2. Loads configuration from JSON file
+    3. Generates state space of parameter combinations
+    4. Tests each combination against all conditions
+    5. Reports the first satisfying combination or indicates no solution found
+    """
     parser = argparse.ArgumentParser(
         description="Test Perlin noise parameters against H3 cells with configurable conditions"
     )
