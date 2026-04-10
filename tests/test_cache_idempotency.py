@@ -127,7 +127,7 @@ class TestTileIdempotency:
             db_session.commit()
 
         # Re-populate
-        populateCacheForTile(h3_test_cell)
+        populateCacheForTile(h3_test_cell, skipCached=False)
 
         # Verify restoration
         final_pois = db_session.query(POI).filter(POI.h3_cell == h3_test_cell).all()
@@ -138,7 +138,7 @@ class TestTileIdempotency:
         assert len(final_pois) == initial_count
 
     def test_complete_partial_tile(self, db_session, mock_overpass_response, h3_test_cell, mocker):
-        """Tile row exists but no POIs - re-running adds POIs."""
+        """Tile row exists - normal mode skips it without re-processing."""
         from scripts.populate_cache import populateCacheForTile
 
         # Simulate interrupted run: Tile created, no POIs
@@ -148,13 +148,13 @@ class TestTileIdempotency:
 
         mocker.patch("kishin_trails.overpass.runOverpass", return_value=mock_overpass_response)
 
-        # Re-run should add POIs
+        # Re-run with skipCached=True (default) - should skip existing tile
         populateCacheForTile(h3_test_cell)
 
-        # Verify POIs were added
+        # Verify tile was NOT modified (still has no POIs)
         tile_data = getTile(h3_test_cell)
         assert tile_data is not None
-        assert len(tile_data["pois"]) > 0
+        assert len(tile_data["pois"]) == 0
 
     def test_tile_type_never_updated(self, db_session, h3_test_cell, mocker):
         """Existing tile_type is preserved even if Overpass returns different type."""
@@ -212,6 +212,88 @@ class TestTileIdempotency:
         # Verify tile_type is still NULL
         tile = db_session.query(Tile).filter(Tile.h3_cell == h3_test_cell).first()
         assert tile.tile_type is None
+
+    def test_restore_empty_tile_with_skip_cached_false(self, db_session, mock_overpass_response, h3_test_cell, mocker):
+        """Tile exists with no POIs - skipCached=False restores POIs."""
+        from scripts.populate_cache import populateCacheForTile
+
+        # Create tile with no POIs
+        tile = Tile(h3_cell=h3_test_cell, tile_type=None)
+        db_session.add(tile)
+        db_session.commit()
+
+        mocker.patch("kishin_trails.overpass.runOverpass", return_value=mock_overpass_response)
+
+        # Re-populate with skipCached=False to force processing
+        populateCacheForTile(h3_test_cell, skipCached=False)
+
+        # Verify POIs were added
+        tile_data = getTile(h3_test_cell)
+        assert tile_data is not None
+        assert len(tile_data["pois"]) > 0
+
+        # Verify POI records in database
+        poi_count = db_session.query(POI).filter(POI.h3_cell == h3_test_cell).count()
+        assert poi_count > 0
+
+    def test_restore_partial_pois_with_skip_cached_false(
+        self,
+        db_session,
+        mock_overpass_response,
+        h3_test_cell,
+        mocker
+    ):
+        """Tile exists with partial POIs - skipCached=False restores missing POIs."""
+        from scripts.populate_cache import populateCacheForTile
+
+        # Initial population
+        populateCacheForTile(h3_test_cell, skipCached=False)
+        all_pois = db_session.query(POI).filter(POI.h3_cell == h3_test_cell).all()
+        initial_osm_ids = {poi.osm_id
+                           for poi in all_pois}
+        initial_count = len(all_pois)
+        assert initial_count > 0
+
+        # Delete some POIs (but not all)
+        if len(all_pois) > 1:
+            for poi in all_pois[:-1]:  # Keep last POI
+                db_session.delete(poi)
+            db_session.commit()
+            remaining_count = db_session.query(POI).filter(POI.h3_cell == h3_test_cell).count()
+            assert remaining_count == 1
+
+        # Re-populate with skipCached=False to restore deleted POIs
+        populateCacheForTile(h3_test_cell, skipCached=False)
+
+        # Verify all POIs restored
+        final_pois = db_session.query(POI).filter(POI.h3_cell == h3_test_cell).all()
+        final_osm_ids = {poi.osm_id
+                         for poi in final_pois}
+        assert final_osm_ids == initial_osm_ids
+        assert len(final_pois) == initial_count
+
+    def test_populate_tile_type_with_skip_cached_false(self, db_session, mock_overpass_response, h3_test_cell, mocker):
+        """Tile with NULL tile_type - skipCached=False populates tile_type from POIs."""
+        from scripts.populate_cache import populateCacheForTile
+
+        # Create tile with NULL tile_type
+        tile = Tile(h3_cell=h3_test_cell, tile_type=None)
+        db_session.add(tile)
+        db_session.commit()
+
+        mocker.patch("kishin_trails.overpass.runOverpass", return_value=mock_overpass_response)
+
+        # Re-populate with skipCached=False
+        populateCacheForTile(h3_test_cell, skipCached=False)
+
+        # Verify tile_type was set based on POI type
+        tile_data = getTile(h3_test_cell)
+        assert tile_data is not None
+        assert tile_data["tile_type"] is not None
+        assert tile_data["tile_type"] in ["peak", "natural", "industrial"]
+
+        # Verify POIs were also added
+        assert len(tile_data["pois"]) > 0
 
 
 class TestPostProcessingPoIIdempotency:
@@ -280,6 +362,56 @@ class TestPostProcessingPoIIdempotency:
         # PostProcessingPoI should be deleted after first fill
         poi_count = db_session.query(PostProcessingPoI).filter(PostProcessingPoI.id == poi_id).count()
         assert poi_count == 0
+
+    def test_post_processing_poi_to_tile_restoration(self, db_session, h3_test_cell, mocker):
+        """PostProcessingPoI linked to tiles - validates tile_type propagation with skipCached=False."""
+        from scripts.populate_cache import (
+            fillPolygonInteriors,
+            insertJunctionEntry,
+            insertOrGetPostProcessingPoi,
+            populateCacheForTile,
+        )
+
+        # Create PostProcessingPoI
+        poi_id = insertOrGetPostProcessingPoi(54321, "Test Forest", "natural")
+
+        # Link to tile via junction table
+        insertJunctionEntry(h3_test_cell, poi_id)
+
+        # Create tile with NULL tile_type (simulating incomplete state)
+        tile = Tile(h3_cell=h3_test_cell, tile_type=None)
+        db_session.add(tile)
+        db_session.commit()
+
+        # Verify initial state
+        tile_initial = db_session.query(Tile).filter(Tile.h3_cell == h3_test_cell).first()
+        assert tile_initial.tile_type is None
+
+        # Run fillPolygonInteriors to propagate tile_type
+        fillPolygonInteriors()
+
+        # Expire all cached objects to force re-query from database
+        db_session.expire_all()
+
+        # Verify tile_type was set from PostProcessingPoI
+        tile_final = db_session.query(Tile).filter(Tile.h3_cell == h3_test_cell).first()
+        assert tile_final.tile_type == "natural"
+
+        # Verify PostProcessingPoI was cleaned up
+        poi_count = db_session.query(PostProcessingPoI).filter(PostProcessingPoI.id == poi_id).count()
+        assert poi_count == 0
+
+        # Verify junction entry was cleaned up
+        junction_result = db_session.execute(
+            text(
+                "SELECT COUNT(*) FROM tile_post_processing_pois WHERE tile_h3_cell = :tile AND post_processing_poi_id = :poi"
+            ),
+            {
+                "tile": h3_test_cell,
+                "poi": poi_id
+            }
+        )
+        assert junction_result.scalar() == 0
 
 
 class TestNoCacheFlag:
