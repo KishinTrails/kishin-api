@@ -118,6 +118,8 @@ class NoiseRequest(BaseModel):
 
     cells: List[str]
     scale: int = 50
+    octaves: int = 3
+    amplitudeDecay: float = 0.5
 
 
 class NoiseResponse(BaseModel):

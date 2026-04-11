@@ -8,102 +8,114 @@
     "threshold": {
       "min": 0.70,
       "max": 1.0,
-      "step": 0.05
+      "step": 0.01
+    },
+    "octaves": {
+      "min": 1,
+      "max": 6,
+      "step": 1
+    },
+    "amplitudeDecay": {
+      "min": 0.3,
+      "max": 0.8,
+      "step": 0.1
     }
   },
   "conditions": [
     {
-      "type": "exactly_active",
-      "count": 1,
+      "comment": "pourliat start",
+      "type": "interval_active",
+      "min": 1,
+      "max": 2,
       "cells": [
         "8a1f96a8b207fff",
-        "8a1f96a8b22ffff",
-        "8a1f96a8b277fff",
-        "8a1f96a8b20ffff"
+        "8a1f96a8b20ffff",
+        "8a1f96a8b277fff"
       ]
     },
     {
+      "comment": "pourliat roundabout",
       "type": "cell_must_be_inactive",
       "cells": [
-        "8a1f96a8b247fff"
+        "8a1f96a8b257fff"
       ]
     },
     {
-      "type": "exactly_active",
-      "count": 2,
+      "comment": "pourliat stadium",
+      "type": "cell_must_be_active",
       "cells": [
-        "8a1f96a8b2effff",
-        "8a1f96a8b2cffff",
-        "8a1f96a8b2c7fff",
-        "8a1f96a8b2dffff",
-        "8a1f96a8b2d7fff",
-        "8a1f96a8b28ffff",
-        "8a1f96a8b2f7fff"
+        "8a1f96a8b08ffff"
       ]
     },
     {
-      "type": "percentage_active",
-      "percentage": 10,
+      "comment": "pourliat botanic",
+      "type": "interval_active",
+      "min": 1,
+      "max": 2,
       "cells": [
-        "8a1f96a8829ffff",
-        "8a1f96a8b927fff",
-        "8a1f96a8825ffff",
-        "8a1f96a8821ffff",
-        "8a1f96a8874ffff",
-        "8a1f96a882d7fff",
-        "8a1f96a882b7fff",
-        "8a1f96a88297fff",
-        "8a1f96a88257fff",
-        "8a1f96a88217fff",
-        "8a1f96a882affff",
-        "8a1f96a8828ffff",
-        "8a1f96a8826ffff",
-        "8a1f96a8824ffff",
-        "8a1f96a8822ffff",
-        "8a1f96a8875ffff",
-        "8a1f96a8820ffff",
-        "8a1f96a882e7fff",
-        "8a1f96a882c7fff",
-        "8a1f96a882a7fff",
-        "8a1f96a88287fff",
-        "8a1f96a8b92ffff",
-        "8a1f96a88207fff",
-        "8a1f96a882dffff",
-        "8a1f96a88667fff",
-        "8a1f96a8866ffff",
-        "8a1f96a8b937fff",
-        "8a1f96a8864ffff",
-        "8a1f96a8b917fff",
-        "8a1f96a8b9affff",
-        "8a1f96a8b9a7fff",
-        "8a1f96a8b987fff",
-        "8a1f96a8865ffff",
-        "8a1f96a88647fff",
-        "8a1f96a886effff",
-        "8a1f96a886c7fff",
-        "8a1f96a886cffff",
-        "8a1f96a886dffff",
-        "8a1f96a8bd67fff",
-        "8a1f96a8b997fff",
-        "8a1f96a8bd6ffff",
-        "8a1f96a8bd47fff",
-        "8a1f96a8bd4ffff",
-        "8a1f96a8bd5ffff",
-        "8a1f96a8bc67fff",
-        "8a1f96a8b897fff",
-        "8a1f96a8b887fff",
-        "8a1f96a8b8a7fff",
-        "8a1f96a8b98ffff",
-        "8a1f96a8b8b7fff",
-        "8a1f96a8bd57fff",
-        "8a1f96a8bd0ffff",
-        "8a1f96a8bd77fff",
-        "8a1f96a8bd2ffff",
-        "8a1f96a886d7fff",
-        "8a1f96a8bd07fff",
-        "8a1f96a8bd1ffff",
-        "8a1f96a8bc37fff",
-        "8a1f96a8bd8ffff"
+        "8a1f96a8b287fff",
+        "8a1f96a8b2b7fff",
+        "8a1f96a8b2a7fff"
+      ]
+    },
+    {
+      "comment": "pourliat to ceyrat",
+      "type": "interval_active",
+      "min": 1,
+      "max": 3,
+      "cells": [
+        "8a1f96a8b447fff",
+        "8a1f96a8b457fff",
+        "8a1f96a8b4e7fff",
+        "8a1f96a8b4f7fff",
+        "8a1f96a8b48ffff",
+        "8a1f96324b27fff"
+      ]
+    },
+    {
+      "comment": "park beaumont",
+      "type": "interval_active",
+      "min": 1,
+      "max": 3,
+      "cells": [
+        "8a1f96ad6c1ffff",
+        "8a1f96ad6c07fff",
+        "8a1f96ad6c0ffff",
+        "8a1f96ad6c77fff",
+        "8a1f96ad6d4ffff",
+        "8a1f96ad6897fff"
+      ]
+    },
+    {
+      "comment": "too close",
+      "type": "cell_must_be_inactive",
+      "cells": [
+        "8a1f96ad652ffff",
+        "8a1f96ad6cd7fff",
+        "8a1f96ad6cc7fff",
+        "8a1f96ad6ce7fff"
+      ]
+    },
+    {
+      "comment": "industrial romagnat",
+      "type": "interval_active",
+      "min": 3,
+      "max": 10,
+      "cells": [
+        "8a1f9632596ffff",
+        "8a1f9632594ffff",
+        "8a1f96ad64b7fff",
+        "8a1f96ad6497fff",
+        "8a1f96ad649ffff",
+        "8a1f96325b27fff",
+        "8a1f96325b07fff",
+        "8a1f96325b0ffff",
+        "8a1f96325847fff",
+        "8a1f9632584ffff",
+        "8a1f96325b17fff",
+        "8a1f96325b1ffff",
+        "8a1f96325b37fff",
+        "8a1f9632586ffff"
       ]
     }
   ]
