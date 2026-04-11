@@ -11,7 +11,10 @@ import geopandas as gpd
 from shapely.geometry import Point
 from typing import Tuple
 
-from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
+try:
+    from kishin_trails.noise_cache_sqlite import getCachedNoise, setCachedNoise
+except ImportError:
+    from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
 import h3
 
 # Exact permutation table from frontend (256 elements)
@@ -384,14 +387,14 @@ def perlin(x: float, y: float) -> float:
 # pylint: enable=invalid-name
 
 
-def getNoiseValue(mercX: float, mercY: float, scale: int) -> float:
+def getNoiseValue(mercX: float, mercY: float, scale: int, octaves: int = 3, amplitudeDecay: float = 0.5) -> float:
     """
     Multi-octave Perlin noise at Mercator coordinates.
 
     This replicates the frontend's getNoiseValue function exactly:
-    - 3 octaves of noise
+    - Configurable octaves of noise
     - frequency = scale * 500
-    - amplitude starts at 1.0, multiplied by 0.5 each octave
+    - amplitude starts at 1.0, multiplied by amplitudeDecay each octave
     - frequency multiplied by 2 each octave
     - Final normalization: (value + 1) / 2
 
@@ -399,21 +402,21 @@ def getNoiseValue(mercX: float, mercY: float, scale: int) -> float:
         mercX: X coordinate in Mercator space (0-1 range, like MapLibre)
         mercY: Y coordinate in Mercator space (0-1 range, like MapLibre)
         scale: Noise scale factor (same as frontend scale parameter)
+        octaves: Number of noise octaves (default 3)
+        amplitudeDecay: Amplitude decay factor per octave (default 0.5)
 
     Returns:
         Noise value in range [0, 1]
     """
     value = 0.0
     amplitude = 1.0
-    frequency = scale * 500  # Exact formula from frontend
+    frequency = scale * 500
 
-    # 3 octaves like frontend
-    for _ in range(3):
+    for _ in range(octaves):
         value += perlin(mercX * frequency, mercY * frequency) * amplitude
-        amplitude *= 0.5
+        amplitude *= amplitudeDecay
         frequency *= 2
 
-    # Normalize to [0, 1] range like frontend
     return (value+1) / 2
 
 
@@ -453,7 +456,7 @@ def latLngToMercator(lat: float, lng: float) -> Tuple[float, float]:
     return mercX, mercY
 
 
-def getNoiseForCell(cell: str, scale: int) -> float:
+def getNoiseForCell(cell: str, scale: int, octaves: int = 3, amplitudeDecay: float = 0.5) -> float:
     """
     Get Perlin noise value for an H3 cell by sampling its center.
 
@@ -467,22 +470,19 @@ def getNoiseForCell(cell: str, scale: int) -> float:
     Args:
         cell: H3 cell index (resolution 10)
         scale: Noise scale factor (same as frontend scale parameter)
+        octaves: Number of noise octaves (default 3)
+        amplitudeDecay: Amplitude decay factor per octave (default 0.5)
 
     Returns:
         Noise value in range [0, 1]
     """
-    cached = getCachedNoise(cell, scale)
+    cached = getCachedNoise(cell, scale, octaves, amplitudeDecay)
     if cached is not None:
         return cached
 
-    # Get cell center coordinates
     lat, lng = h3.cell_to_latlng(cell)
-
-    # Convert to Mercator coordinates
     mercX, mercY = latLngToMercator(lat, lng)
+    value = getNoiseValue(mercX, mercY, scale, octaves, amplitudeDecay)
 
-    # Get noise value using the same algorithm as frontend
-    value = getNoiseValue(mercX, mercY, scale)
-
-    setCachedNoise(cell, scale, value)
+    setCachedNoise(cell, scale, octaves, amplitudeDecay, value)
     return value

@@ -59,7 +59,7 @@ async def getCellNoise(request: NoiseRequest):
     results = []
     for cell in request.cells:
         try:
-            noiseValue = getNoiseForCell(cell, request.scale)
+            noiseValue = getNoiseForCell(cell, request.scale, request.octaves, request.amplitudeDecay)
             results.append({
                 "cell": cell,
                 "noise": noiseValue

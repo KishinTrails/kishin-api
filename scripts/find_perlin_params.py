@@ -13,8 +13,10 @@ import json
 from typing import Any
 
 from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from kishin_trails.noise_cache import loadCache, clearCache
+from kishin_trails.noise_cache_sqlite import initCache, loadCache, clearCache
 from kishin_trails.perlin import getNoiseForCell
 
 
@@ -32,7 +34,7 @@ def loadConfig(configPath: str) -> dict[str, Any]:
         return json.load(handle)
 
 
-def isActive(cell: str, scale: int, threshold: float) -> bool:
+def isActive(cell: str, scale: int, threshold: float, octaves: int = 3, amplitudeDecay: float = 0.5) -> bool:
     """
     Determine if an H3 cell is considered 'active' based on its noise value.
 
@@ -42,15 +44,17 @@ def isActive(cell: str, scale: int, threshold: float) -> bool:
         cell: H3 cell identifier.
         scale: Noise scale parameter.
         threshold: Threshold value for activation (0-1 range).
+        octaves: Number of noise octaves.
+        amplitudeDecay: Amplitude decay factor per octave.
 
     Returns:
         True if noise value exceeds threshold, False otherwise.
     """
-    noiseValue = getNoiseForCell(cell, scale)
+    noiseValue = getNoiseForCell(cell, scale, octaves, amplitudeDecay)
     return noiseValue > threshold
 
 
-def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> tuple[bool, str]:
+def checkCondition(condition: dict[str, Any], scale: int, threshold: float, octaves: int = 3, amplitudeDecay: float = 0.5) -> tuple[bool, str]:
     """
     Check if a condition is satisfied.
   
@@ -59,9 +63,9 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
     """
     conditionType = condition["type"]
 
-    if conditionType in ["min_active", "max_active", "exactly_active", "percentage_active"]:
+    if conditionType in ["min_active", "max_active", "exactly_active", "interval_active", "percentage_active"]:
         cells = condition["cells"]
-        activeCount = sum(1 for cell in cells if isActive(cell, scale, threshold))
+        activeCount = sum(1 for cell in cells if isActive(cell, scale, threshold, octaves, amplitudeDecay))
 
         if conditionType == "min_active":
             count = condition["count"]
@@ -75,6 +79,11 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
             count = condition["count"]
             satisfied = activeCount == count
             message = f"exactly_active: {activeCount}/{len(cells)} active (need == {count})"
+        elif conditionType == "interval_active":
+            minCount = condition["min"]
+            maxCount = condition["max"]
+            satisfied = minCount <= activeCount <= maxCount
+            message = f"interval_active: {activeCount}/{len(cells)} active (need {minCount}-{maxCount})"
         else:
             percentage = condition["percentage"]
             actualPercentage = (activeCount / len(cells)) * 100
@@ -86,7 +95,7 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
     if conditionType == "cell_must_be_active":
         cells = condition["cells"]
         cell = cells[0]
-        active = isActive(cell, scale, threshold)
+        active = isActive(cell, scale, threshold, octaves, amplitudeDecay)
         satisfied = active
         message = f"cell_must_be_active: {cell} is {'active' if active else 'inactive'}"
         return satisfied, message
@@ -94,7 +103,7 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
     if conditionType == "cell_must_be_inactive":
         cells = condition["cells"]
         cell = cells[0]
-        active = isActive(cell, scale, threshold)
+        active = isActive(cell, scale, threshold, octaves, amplitudeDecay)
         satisfied = not active
         message = f"cell_must_be_inactive: {cell} is {'inactive' if not active else 'active'}"
         return satisfied, message
@@ -102,7 +111,14 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
     raise ValueError(f"Unknown condition type: {conditionType}")
 
 
-def testParameters(conditions: list[dict[str, Any]], scale: int, threshold: float) -> tuple[bool, list[str]]:
+def testParameters(conditions: list[dict[str,
+                                         Any]],
+                   scale: int,
+                   threshold: float,
+                   octaves: int = 3,
+                   amplitudeDecay: float = 0.5) -> tuple[bool,
+                                                         list[str],
+                                                         list[str | None]]:
     """
     Evaluate all conditions against the given scale and threshold parameters.
 
@@ -113,39 +129,63 @@ def testParameters(conditions: list[dict[str, Any]], scale: int, threshold: floa
         conditions: List of condition dictionaries to evaluate.
         scale: Noise scale parameter to test.
         threshold: Noise threshold value to test.
+        octaves: Number of noise octaves.
+        amplitudeDecay: Amplitude decay factor per octave.
 
     Returns:
-        Tuple of (all_satisfied, list of condition result messages).
+        Tuple of (all_satisfied, list of condition result messages, list of comments).
         all_satisfied is True only if every condition passes.
+        Comments are None if not provided in the condition.
     """
     results = []
+    comments = []
     allSatisfied = True
 
     for condition in conditions:
-        satisfied, message = checkCondition(condition, scale, threshold)
+        satisfied, message = checkCondition(condition, scale, threshold, octaves, amplitudeDecay)
         results.append(message)
+        comments.append(condition.get("comment"))
         if not satisfied:
             allSatisfied = False
 
-    return allSatisfied, results
+    return allSatisfied, results, comments
 
 
-def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[int, float]]:
+def testCombination(args: tuple[list[dict[str, Any]], int, float, int, float]) -> tuple[bool, list[str], list[str | None], int, float, int, float]:
+    """
+    Worker function for multiprocessing.
+    
+    Each worker initializes its own SQLite connection for thread-safe caching.
+    
+    Args:
+        args: Tuple of (conditions, scale, threshold, octaves, amplitudeDecay)
+    
+    Returns:
+        Tuple of (satisfied, messages, comments, scale, threshold, octaves, amplitudeDecay)
+    """
+    conditions, scale, threshold, octaves, amplitudeDecay = args
+    satisfied, messages, comments = testParameters(conditions, scale, threshold, octaves, amplitudeDecay)
+    return satisfied, messages, comments, scale, threshold, octaves, amplitudeDecay
+
+
+def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[int, float, int, float]]:
     """
     Generate all parameter combinations from the state space configuration.
 
-    Creates a grid of (scale, threshold) pairs by iterating through the
+    Creates a grid of (scale, threshold, octaves, amplitudeDecay) tuples by iterating through the
     configured ranges with specified step sizes.
 
     Args:
-        stateSpace: Dictionary with 'scale' and 'threshold' range configs,
+        stateSpace: Dictionary with 'scale', 'threshold', 'octaves', and 'amplitudeDecay' range configs,
                     each containing 'min', 'max', and optional 'step'.
 
     Returns:
-        List of (scale, threshold) tuples representing all combinations.
+        List of (scale, threshold, octaves, amplitudeDecay) tuples representing all combinations.
     """
     scaleConfig = stateSpace["scale"]
     thresholdConfig = stateSpace["threshold"]
+    octavesConfig = stateSpace.get("octaves", {"min": 3, "max": 3, "step": 1})
+    amplitudeDecayConfig = stateSpace.get("amplitudeDecay", {"min": 0.5, "max": 0.5, "step": 0.1})
 
     scaleMin = int(scaleConfig["min"])
     scaleMax = int(scaleConfig["max"])
@@ -155,6 +195,14 @@ def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[in
     thresholdMax = float(thresholdConfig["max"])
     thresholdStep = float(thresholdConfig.get("step", 0.05))
 
+    octavesMin = int(octavesConfig["min"])
+    octavesMax = int(octavesConfig["max"])
+    octavesStep = int(octavesConfig.get("step", 1))
+
+    amplitudeDecayMin = float(amplitudeDecayConfig["min"])
+    amplitudeDecayMax = float(amplitudeDecayConfig["max"])
+    amplitudeDecayStep = float(amplitudeDecayConfig.get("step", 0.1))
+
     combinations = []
     scaleValues = list(range(scaleMin, scaleMax + 1, scaleStep))
     thresholdValues = []
@@ -163,9 +211,18 @@ def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[in
         thresholdValues.append(round(current, 10))
         current += thresholdStep
 
+    octavesValues = list(range(octavesMin, octavesMax + 1, octavesStep))
+    amplitudeDecayValues = []
+    current = amplitudeDecayMin
+    while current <= amplitudeDecayMax + 1e-9:
+        amplitudeDecayValues.append(round(current, 10))
+        current += amplitudeDecayStep
+
     for scale in scaleValues:
         for threshold in thresholdValues:
-            combinations.append((scale, threshold))
+            for octaves in octavesValues:
+                for amplitudeDecay in amplitudeDecayValues:
+                    combinations.append((scale, threshold, octaves, amplitudeDecay))
 
     return combinations
 
@@ -186,6 +243,7 @@ def main():
     )
     parser.add_argument("--config", type=str, required=True, help="Path to JSON configuration file")
     parser.add_argument("--clear-cache", action="store_true", help="Clear the noise cache before running")
+    parser.add_argument("--no-cache", action="store_true", help="Run without using or saving to cache")
 
     args = parser.parse_args()
 
@@ -193,7 +251,9 @@ def main():
         clearCache()
         print("Cache cleared")
 
-    loadCache()
+    initCache()
+    if not args.no_cache:
+        loadCache()
 
     config = loadConfig(args.config)
     conditions = config["conditions"]
@@ -211,29 +271,49 @@ def main():
     print(f"State space: {total} parameter combinations")
     print()
 
-    for scale, threshold in tqdm(combinations, desc="Testing parameters"):
-        satisfied, messages = testParameters(conditions, scale, threshold)
+    workItems = [
+        (conditions, scale, threshold, octaves, amplitudeDecay)
+        for scale, threshold, octaves, amplitudeDecay in combinations
+    ]
 
-        if satisfied:
-            print(f"\n✓ Found solution!")
-            print(f"  scale: {scale}")
-            print(f"  threshold: {threshold}")
-            print()
-            print("Condition results:")
-            for msg in messages:
+    solution = None
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(testCombination, item): i for i, item in enumerate(workItems)}
+        
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Testing parameters"):
+            satisfied, messages, comments, scale, threshold, octaves, amplitudeDecay = future.result()
+            
+            if satisfied:
+                for f in futures:
+                    f.cancel()
+                solution = {
+                    "scale": scale,
+                    "threshold": threshold,
+                    "octaves": octaves,
+                    "amplitudeDecay": amplitudeDecay,
+                    "messages": messages,
+                    "comments": comments
+                }
+                break
+
+    if solution:
+        print(f"\n✓ Found solution!")
+        print(f"  scale: {solution['scale']}")
+        print(f"  threshold: {solution['threshold']}")
+        print(f"  octaves: {solution['octaves']}")
+        print(f"  amplitudeDecay: {solution['amplitudeDecay']}")
+        print()
+        print("Condition results:")
+        for i, msg in enumerate(solution["messages"]):
+            comment = solution["comments"][i]
+            if comment:
+                print(f"  ✓ {msg} — {comment}")
+            else:
                 print(f"  ✓ {msg}")
-            print()
-            print("Cell details:")
-            for cell in sorted(allCells):
-                noiseValue = getNoiseForCell(cell, scale)
-                active = noiseValue > threshold
-                status = "ACTIVE" if active else "inactive"
-                print(f"  {cell}: {noiseValue:.4f} ({status})")
-            return
-
-    print("\n✗ No solution found")
-    print(f"Tested {total} parameter combinations")
-    print("Consider adjusting state_space or conditions")
+    else:
+        print("\n✗ No solution found")
+        print(f"Tested {total} parameter combinations")
+        print("Consider adjusting state_space or conditions")
 
 
 if __name__ == "__main__":

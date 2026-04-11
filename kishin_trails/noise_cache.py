@@ -12,7 +12,9 @@ from typing import Dict, Tuple
 
 _CACHE_FILE = Path(__file__).parent.parent / "cache" / "noise_cache.pkl"
 _cache: Dict[Tuple[str,
-                   int],
+                   int,
+                   int,
+                   float],
              float] = {}
 
 
@@ -57,28 +59,32 @@ def clearCache() -> None:
         _CACHE_FILE.unlink()
 
 
-def getCachedNoise(cell: str, scale: int) -> float | None:
+def getCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float) -> float | None:
     """
     Retrieve a cached Perlin noise value for a specific H3 cell and scale.
 
     Args:
         cell: H3 cell identifier.
         scale: Noise scale parameter.
+        octaves: Number of noise octaves.
+        amplitudeDecay: Amplitude decay factor per octave.
 
     Returns:
         Cached noise value if available, None otherwise.
     """
-    return _cache.get((cell, scale))
+    return _cache.get((cell, scale, octaves, amplitudeDecay))
 
 
-def setCachedNoise(cell: str, scale: int, value: float) -> None:
+def setCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float, value: float) -> None:
     """
     Store a Perlin noise value in the cache and persist to disk.
 
     Args:
         cell: H3 cell identifier.
         scale: Noise scale parameter.
+        octaves: Number of noise octaves.
+        amplitudeDecay: Amplitude decay factor per octave.
         value: Computed noise value to cache (range [0, 1]).
     """
-    _cache[(cell, scale)] = value
+    _cache[(cell, scale, octaves, amplitudeDecay)] = value
     saveCache()
