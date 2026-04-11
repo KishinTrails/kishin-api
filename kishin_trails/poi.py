@@ -7,7 +7,7 @@ Provides API endpoints for querying nearby POIs based on location.
 import logging
 
 from typing import TYPE_CHECKING, Any, List, Tuple
-from shapely.geometry import Point
+from shapely.geometry import LineString, MultiPolygon, Polygon, Point
 
 from kishin_trails.cache import getTile, setTile
 from kishin_trails.config import settings
@@ -300,12 +300,11 @@ def getPoiDataForCell(h3Cell: str) -> dict | None:
     for _, row in gdf.iterrows():
         tags = dict(row.items())
         geometry = tags.get("geometry")
-        if geometry is not None and isinstance(geometry,
-                                               Point) and not pointInH3Hexagon(geometry.y,
-                                                                               geometry.x,
-                                                                               h3Cell):
+        if geometry is None:
+            assert False, "Geometry not present in element!"
+        elif isinstance(geometry, Point) and not pointInH3Hexagon(geometry.y, geometry.x, h3Cell):
             continue
-        if False:  # FIXME: Placeholder for future polygon handling.
+        elif isinstance(geometry, (LineString, MultiPolygon, Polygon)):
             continue
 
         elements.append({
