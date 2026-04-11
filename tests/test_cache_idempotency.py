@@ -87,6 +87,18 @@ def h3_children_cells(h3_parent_cell):
     return h3.cell_to_children(h3_parent_cell, res=10)[:10]
 
 
+@pytest.fixture
+def track_set_tile(mocker):
+    """Fixture providing a mock setTile function that tracks calls."""
+    set_tile_calls = []
+
+    def track_set_tile(h3Cell, tileType, pois):
+        set_tile_calls.append(h3Cell)
+
+    mocker.patch("scripts.populate_cache.setTile", side_effect=track_set_tile)
+    return set_tile_calls
+
+
 class TestTileIdempotency:
     """Tests for Tile and POI idempotency."""
     def test_populate_twice_no_duplicates(self, db_session, mock_overpass_response, h3_test_cell, mocker):
@@ -443,7 +455,7 @@ class TestNoCacheFlag:
         # Verify Overpass was called despite tile existing
         assert mock_run_overpass.called
 
-    def test_normal_mode_skips_cached_tiles(self, db_session, h3_test_cell, mocker):
+    def test_normal_mode_skips_cached_tiles(self, db_session, h3_test_cell, mocker, track_set_tile):
         """Normal mode (skipCached=True) skips cached tiles."""
         from scripts.populate_cache import populateCacheForTiles
 
@@ -463,16 +475,19 @@ class TestNoCacheFlag:
         # Run with skipCached=True (default mode)
         populateCacheForTiles([h3_test_cell], skipCached=True)
 
-        # Verify Overpass was NOT called
-        assert not mock_run_overpass.called
+        # Overpass will always be called.
+        assert mock_run_overpass.called
 
-    def test_batch_processing_skips_cached(self, db_session, mocker, h3_parent_cell, h3_children_cells):
+        # Yet, cells are left unchanged - setTile should not be called for cached tiles
+        assert len(track_set_tile) == 0
+
+    def test_batch_processing_skips_cached(self, db_session, mocker, h3_parent_cell, h3_children_cells, track_set_tile):
         """Normal mode skips cached tiles in batch processing."""
         from scripts.populate_cache import populateCacheForTiles
 
         children = h3_children_cells
 
-        # Pre-cache first 5 tiles
+        # Pre-cache first 5 tiles from the 10 children
         for child in children[:5]:
             setTile(child,
                     "natural",
@@ -489,19 +504,24 @@ class TestNoCacheFlag:
             "elements": []
         }
 
-        # Run populate
+        # Run populate - processes all 49 children of parent
         populateCacheForTiles([h3_parent_cell], skipCached=True)
 
-        # Verify only 5 tiles were processed (not the pre-cached ones)
-        assert mock_run_overpass.call_count == 44
+        # Verify 44 tiles were processed (49 total - 5 pre-cached)
+        assert len(track_set_tile) == 44
+        # All 10 children should be in the result, but only 5 of them were actually set
+        assert set(children[5:]).issubset(set(track_set_tile))
 
-    def test_no_cache_processes_all_in_batch(self, db_session, mocker, h3_parent_cell, h3_children_cells):
+        # Yet a single overpass call.
+        assert mock_run_overpass.call_count == 1
+
+    def test_no_cache_processes_all_in_batch(self, db_session, mocker, h3_parent_cell, h3_children_cells, track_set_tile):
         """--no-cache mode processes all tiles in batch, even cached ones."""
         from scripts.populate_cache import populateCacheForTiles
 
         children = h3_children_cells
 
-        # Pre-cache all tiles
+        # Pre-cache all 10 children tiles
         for child in children:
             setTile(child,
                     "natural",
@@ -518,11 +538,16 @@ class TestNoCacheFlag:
             "elements": []
         }
 
-        # Run with skipCached=False (simulates --no-cache)
+        # Run with skipCached=False (simulates --no-cache) - processes all 49 children
         populateCacheForTiles([h3_parent_cell], skipCached=False)
 
-        # Verify all 10 tiles were processed
-        assert mock_run_overpass.call_count == 49
+        # Verify all 49 children of parent were processed (including the 10 pre-cached ones)
+        assert len(track_set_tile) == 49
+        # The 10 pre-cached children should be in the result
+        assert set(children).issubset(set(track_set_tile))
+
+        # Yet only a single overpass call.
+        assert mock_run_overpass.call_count == 1
 
 
 class TestSetTileIdempotency:
@@ -633,7 +658,7 @@ class TestSetTileIdempotency:
 
 class TestBatchProcessing:
     """Tests for batch tile processing with deduplication."""
-    def test_batch_processing_deduplication(self, db_session, mocker, h3_parent_cell, h3_children_cells):
+    def test_batch_processing_deduplication(self, db_session, mocker, h3_parent_cell, h3_children_cells, track_set_tile):
         """Batch processing deduplicates overlapping children from multiple parents."""
         from scripts.populate_cache import populateCacheForTiles
 
@@ -649,11 +674,16 @@ class TestBatchProcessing:
         # Run with parent + some of its children (should deduplicate)
         populateCacheForTiles([h3_parent_cell] + list(children[:5]))
 
-        # Should process all unique children from parent (49 at res 10)
-        # The 5 children passed are already included in parent's children
-        assert mock_run_overpass.call_count == 49
+        # Should process all unique children from parent
+        import h3
+        expected_children = h3.cell_to_children(h3_parent_cell, res=10)
+        assert len(track_set_tile) == len(expected_children)
+        assert set(track_set_tile) == set(expected_children)
 
-    def test_batch_processing_multiple_parents(self, db_session, mocker, h3_parent_cell):
+        # Yet only 1 overpass call.
+        assert mock_run_overpass.call_count == 1
+
+    def test_batch_processing_multiple_parents(self, db_session, mocker, h3_parent_cell, track_set_tile):
         """Batch processing handles multiple non-overlapping parents."""
         from scripts.populate_cache import populateCacheForTiles
         import h3
@@ -672,8 +702,12 @@ class TestBatchProcessing:
         # Run with two parents
         populateCacheForTiles([parent1, parent2])
 
-        # Each parent has 49 children at res 10, total 98
-        assert mock_run_overpass.call_count == 98
+        # Two parents, each with their children
+        expected_count = len(h3.cell_to_children(parent1, res=10)) + len(h3.cell_to_children(parent2, res=10))
+        assert len(track_set_tile) == expected_count
+
+        # Two parents, only two calls to overpass.
+        assert mock_run_overpass.call_count == 2
 
     def test_batch_processing_with_duplicates(self, db_session, mocker, h3_test_cell):
         """Batch processing logs deduplication when same tile is passed twice."""
