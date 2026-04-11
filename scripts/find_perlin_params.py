@@ -28,8 +28,8 @@ def loadConfig(configPath: str) -> dict[str, Any]:
     Returns:
         Dictionary containing configuration with conditions and state_space.
     """
-    with open(configPath, "r") as f:
-        return json.load(f)
+    with open(configPath, "r") as handle:
+        return json.load(handle)
 
 
 def isActive(cell: str, scale: int, threshold: float) -> bool:
@@ -83,7 +83,7 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
 
         return satisfied, message
 
-    elif conditionType == "cell_must_be_active":
+    if conditionType == "cell_must_be_active":
         cells = condition["cells"]
         cell = cells[0]
         active = isActive(cell, scale, threshold)
@@ -91,7 +91,7 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
         message = f"cell_must_be_active: {cell} is {'active' if active else 'inactive'}"
         return satisfied, message
 
-    elif conditionType == "cell_must_be_inactive":
+    if conditionType == "cell_must_be_inactive":
         cells = condition["cells"]
         cell = cells[0]
         active = isActive(cell, scale, threshold)
@@ -99,8 +99,7 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float) -> t
         message = f"cell_must_be_inactive: {cell} is {'inactive' if not active else 'active'}"
         return satisfied, message
 
-    else:
-        raise ValueError(f"Unknown condition type: {conditionType}")
+    raise ValueError(f"Unknown condition type: {conditionType}")
 
 
 def testParameters(conditions: list[dict[str, Any]], scale: int, threshold: float) -> tuple[bool, list[str]]:

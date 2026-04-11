@@ -1,8 +1,8 @@
 """
 Script to populate the cache with POI data for H3 tiles.
 
-Takes an H3 tile ID as argument, uncompacts it to level 10 tiles,
-and populates the cache with POI data for each tile.
+Takes one or more H3 tile IDs as argument, uncompacts them to level 10 tiles,
+deduplicates the children, and populates the cache with POI data for each tile.
 """
 
 import argparse
@@ -92,28 +92,36 @@ def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
         session.close()
 
 
-def populateCacheForTile(h3Cell: str, skipCached: bool = True) -> None:
-    """Populate cache for a single H3 tile.
-    
+def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True) -> None:
+    """Populate cache for multiple H3 tiles with unified progress tracking.
+
     Args:
-        h3Cell: H3 cell identifier.
+        h3Cells: List of parent H3 cell IDs.
         skipCached: If True, skip tiles that already exist in database.
                    If False, re-process all tiles (for --no-cache mode).
     """
-    res = h3.get_resolution(h3Cell)
-    if res > 10:
-        logger.error("H3 cell resolution must be >= 10, got %d", res)
-        return
+    allChildren: list[str] = []
+    for parentCell in h3Cells:
+        res = h3.get_resolution(parentCell)
+        if res > 10:
+            logger.error("H3 cell resolution must be >= 10, got %d for %s", res, parentCell)
+            continue
 
-    # Get level 10 children
-    if res < 10:
-        children = h3.cell_to_children(h3Cell, res=10)
-    else:
-        children = [h3Cell]
+        if res < 10:
+            children = h3.cell_to_children(parentCell, res=10)
+            allChildren.extend(children)
+        else:
+            allChildren.append(parentCell)
 
-    logger.info("Processing %d level 10 tiles for parent %s", len(children), h3Cell)
+    initialCount = len(allChildren)
+    uniqueChildren = list(dict.fromkeys(allChildren))
+    deduplicatedCount = initialCount - len(uniqueChildren)
 
-    for childCell in tqdm(children, desc="Populating cache"):
+    logger.info("Collected %d level-10 tiles from %d parent tile(s)", len(uniqueChildren), len(h3Cells))
+    if deduplicatedCount > 0:
+        logger.info("Removed %d duplicate tile(s)", deduplicatedCount)
+
+    for childCell in tqdm(uniqueChildren, desc="Populating cache"):
         # Check if already cached
         existing = getTile(childCell)
         if existing and skipCached:
@@ -192,7 +200,7 @@ def populateCacheForTile(h3Cell: str, skipCached: bool = True) -> None:
         waypoints, tileType = filterWaypointsForCache(elements)
         setTile(childCell, tileType, waypoints)
 
-    logger.info("Finished populating cache for %s", h3Cell)
+    logger.info("Finished populating cache for %d tile(s)", len(uniqueChildren))
 
 
 def fillPolygonInteriors() -> None:
@@ -218,6 +226,34 @@ def fillPolygonInteriors() -> None:
     logger.info("Finished polygon interior filling")
 
 
+def parseH3Cells(h3CellsStr: str) -> list[str]:
+    """Parse comma-separated H3 cell IDs into a list.
+
+    Args:
+        h3CellsStr: Comma-separated string of H3 cell IDs.
+
+    Returns:
+        List of validated H3 cell IDs.
+
+    Raises:
+        ValueError: If any cell ID is invalid or has resolution > 10.
+    """
+    cells = [cell.strip() for cell in h3CellsStr.split(",")]
+    cells = [cell for cell in cells if cell]
+
+    if not cells:
+        raise ValueError("No H3 cell IDs provided")
+
+    for cell in cells:
+        if not h3.is_valid_cell(cell):
+            raise ValueError(f"Invalid H3 cell: {cell}")
+        res = h3.get_resolution(cell)
+        if res > 10:
+            raise ValueError(f"H3 cell resolution must be <= 10, got {res} for cell {cell}")
+
+    return cells
+
+
 def main() -> None:
     """Main entry point for the cache population script.
 
@@ -226,11 +262,18 @@ def main() -> None:
     2. Querying the Overpass API for each tile
     3. Filtering and caching POI data
 
+    Supports multiple H3 tiles via comma-separated input. All provided
+    tiles are processed with the same flags applied.
+
     Supports optional polygon interior filling to propagate tile types
     to interior cells of polygon areas (forests, parks, industrial zones).
     """
     parser = argparse.ArgumentParser(description="Populate cache with POI data for H3 tiles")
-    parser.add_argument("h3_cell", nargs="?", help="H3 cell ID (resolution >= 10)")
+    parser.add_argument(
+        "h3_cells",
+        nargs="?",
+        help="Comma-separated H3 cell IDs (resolution <= 10), e.g., 'tile1,tile2,tile3'"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without actually caching")
     parser.add_argument(
         "--fill-polygons",
@@ -250,32 +293,35 @@ def main() -> None:
         fillPolygonInteriors()
         return
 
-    h3Cell = args.h3_cell
+    h3CellsStr = args.h3_cells
 
-    if not h3Cell:
-        logger.error("h3_cell argument is required (unless using --fill-only)")
+    if not h3CellsStr:
+        logger.error("h3_cells argument is required (unless using --fill-only)")
         sys.exit(1)
 
-    if not h3.is_valid_cell(h3Cell):
-        logger.error("Invalid H3 cell: %s", h3Cell)
+    try:
+        h3Cells = parseH3Cells(h3CellsStr)
+    except ValueError as e:
+        logger.error(str(e))
         sys.exit(1)
 
-    res = h3.get_resolution(h3Cell)
-    if res > 10:
-        logger.error("H3 cell resolution must be <= 10, got %d", res)
-        sys.exit(1)
-
-    logger.info("Starting cache population for H3 cell: %s (resolution %d)", h3Cell, res)
+    logger.info("Starting cache population for %d H3 cell(s)", len(h3Cells))
 
     if args.dry_run:
-        if res < 10:
-            children = h3.cell_to_children(h3Cell, res=10)
-        else:
-            children = [h3Cell]
-        logger.info("Dry run: would process %d level 10 tiles", len(children))
+        allChildren: list[str] = []
+        for parentCell in h3Cells:
+            res = h3.get_resolution(parentCell)
+            if res < 10:
+                children = h3.cell_to_children(parentCell, res=10)
+                allChildren.extend(children)
+            else:
+                allChildren.append(parentCell)
+        uniqueChildren = list(dict.fromkeys(allChildren))
+        logger.info("Dry run: would process %d level-10 tiles", len(uniqueChildren))
     else:
         skipCached = not args.no_cache
-        populateCacheForTile(h3Cell, skipCached=skipCached)
+        populateCacheForTiles(h3Cells, skipCached=skipCached)
+        logger.info("Successfully processed %d H3 parent tile(s)", len(h3Cells))
 
     if args.fill_polygons:
         fillPolygonInteriors()

@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 _CACHE_FILE = Path(__file__).parent.parent / "cache" / "noise_cache.pkl"
-_cache: Dict[Tuple[str, int], float] = {}
+_cache: Dict[Tuple[str,
+                   int],
+             float] = {}
 
 
 def loadCache() -> None:
@@ -24,8 +26,8 @@ def loadCache() -> None:
     global _cache
     if _CACHE_FILE.exists():
         try:
-            with open(_CACHE_FILE, "rb") as f:
-                _cache = pickle.load(f)
+            with open(_CACHE_FILE, "rb") as handle:
+                _cache = pickle.load(handle)
         except (pickle.UnpicklingError, EOFError):
             _cache = {}
 
@@ -38,8 +40,8 @@ def saveCache() -> None:
     cache state to a pickle file for persistence.
     """
     _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_CACHE_FILE, "wb") as f:
-        pickle.dump(_cache, f)
+    with open(_CACHE_FILE, "wb") as handle:
+        pickle.dump(_cache, handle)
 
 
 def clearCache() -> None:
