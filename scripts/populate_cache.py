@@ -21,7 +21,7 @@ from kishin_trails.database import SESSION_LOCAL
 from kishin_trails.models import PostProcessingPoI, Tile
 from kishin_trails.overpass import loadElementsAt
 from kishin_trails.poi import filterWaypointsForCache
-from kishin_trails.utils import getH3Circle, pointInH3Hexagon
+from kishin_trails.utils import getH3Circle, pointInH3Hexagon, getH3Cell
 
 logging.basicConfig(
     level=logging.WARN,
@@ -117,13 +117,13 @@ def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
         session.close()
 
 
-def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True) -> None:
+def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> None:
     """Populate cache for multiple H3 tiles with unified progress tracking.
 
     Args:
         h3Cells: List of parent H3 cell IDs.
         skipCached: If True, skip tiles that already exist in database.
-                   If False, re-process all tiles (for --no-cache mode).
+                    If False, re-process all tiles (for --no-cache mode).
     """
     # Expand all parent tiles to level 10 children for consistent granularity
     # Level 10 provides a good balance between detail and performance
@@ -246,6 +246,182 @@ def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True) -> None:
     logger.info("Finished populating cache for %d tile(s)", len(uniqueChildren))
 
 
+def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryResolution: int = 5) -> None:
+    """Populate cache using efficient single-query-per-parent approach.
+
+    Instead of querying Overpass for each level-10 tile individually, this function:
+    1. Groups input tiles by their level-5 (or configurable) parent
+    2. Makes ONE Overpass query per parent tile
+    3. Distributes elements to their correct level-10 tiles based on geometry
+    4. Caches each level-10 tile separately
+
+    This reduces network calls by ~100x for large areas.
+
+    Args:
+        h3Cells: List of parent H3 cell IDs (resolution <= 10).
+        skipCached: If True, skip tiles that already exist in database.
+        queryResolution: H3 resolution for grouping queries (default 5).
+                        Lower = fewer queries but larger result sets.
+    """
+    if queryResolution > 10:
+        logger.error("Query resolution must be <= 10, got %d", queryResolution)
+        return
+
+    allLevel10Children: list[str] = []
+    for parentCell in h3Cells:
+        res = h3.get_resolution(parentCell)
+        if res > 10:
+            logger.error("H3 cell resolution must be <= 10, got %d for %s", res, parentCell)
+            continue
+
+        if res < 10:
+            children = h3.cell_to_children(parentCell, res=10)
+            allLevel10Children.extend(children)
+        else:
+            allLevel10Children.append(parentCell)
+
+    initialCount = len(allLevel10Children)
+    uniqueLevel10Children = list(dict.fromkeys(allLevel10Children))
+    deduplicatedCount = initialCount - len(uniqueLevel10Children)
+
+    logger.info("Collected %d level-10 tiles from %d parent tile(s)", len(uniqueLevel10Children), len(h3Cells))
+    if deduplicatedCount > 0:
+        logger.info("Removed %d duplicate level-10 tile(s)", deduplicatedCount)
+
+    parentTiles: set[str] = set()
+    for childCell in uniqueLevel10Children:
+        res = h3.get_resolution(childCell)
+        if res > queryResolution:
+            parent = h3.cell_to_parent(childCell, res=queryResolution)
+            parentTiles.add(parent)
+        else:
+            parentTiles.add(childCell)
+
+    logger.info("Grouped into %d parent tile(s) at resolution %d for querying", len(parentTiles), queryResolution)
+
+    elementsByTile: dict[str,
+                         list[dict]] = {}
+    polygonProcessing: list[tuple[int, str | None, str, Polygon | MultiPolygon]] = []
+
+    logger.info("Querying Overpass API for %d parent tile(s)...", len(parentTiles))
+    for parentTile in parentTiles:
+        try:
+            lat, lng, radiusM, _ = getH3Circle(parentTile, 0)
+        except ValueError as e:
+            logger.warning("Skipping parent tile %s: %s", parentTile, e)
+            continue
+
+        retryDelay = 5
+        gdf = None
+        while True:
+            try:
+                gdf = loadElementsAt(lat, lng, radiusM)
+                break
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code in (429, 504):
+                    logger.warning(
+                        "Overpass API error %s for parent tile %s, retrying in %ds",
+                        e.response.status_code,
+                        parentTile,
+                        retryDelay
+                    )
+                    time.sleep(retryDelay)
+                    retryDelay *= 2
+                else:
+                    raise
+
+        if gdf is None:
+            continue
+
+        for _, row in gdf.iterrows():
+            tags = dict(row.items())
+            geometry = tags.get("geometry")
+            if geometry is None:
+                assert False, "Geometry not present in element!"
+
+            if isinstance(geometry, Point):
+                pointLat, pointLng = geometry.y, geometry.x
+                level10Cell = getH3Cell(pointLat, pointLng, 10)
+
+                if level10Cell not in uniqueLevel10Children:
+                    continue
+
+                if level10Cell not in elementsByTile:
+                    elementsByTile[level10Cell] = []
+
+                elementsByTile[level10Cell].append({
+                    "id": row["id"],
+                    "tags": dict(row.items())
+                })
+
+            elif isinstance(geometry, (MultiPolygon, Polygon)):
+                tileType = None
+                if tags.get('landuse') == 'industrial':
+                    tileType = 'industrial'
+                elif tags.get('landuse') == 'forest':
+                    tileType = 'natural'
+                elif tags.get('leisure') == 'park':
+                    tileType = 'natural'
+
+                if tileType:
+                    polygonProcessing.append((int(row['id']), tags.get('name'), tileType, geometry))
+
+                    allCells = []
+                    if isinstance(geometry, Polygon):
+                        coords = list(geometry.exterior.coords)
+                        h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
+                        allCells = h3.polygon_to_cells(h3Polygon, res=10)
+                    elif isinstance(geometry, MultiPolygon):
+                        for poly in geometry.geoms:
+                            coords = list(poly.exterior.coords)
+                            h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
+                            allCells.extend(h3.polygon_to_cells(h3Polygon, res=10))
+
+                    for cell in allCells:
+                        if cell in uniqueLevel10Children:
+                            if cell not in elementsByTile:
+                                elementsByTile[cell] = []
+                            elementsByTile[cell].append({
+                                "id": row["id"],
+                                "tags": dict(row.items())
+                            })
+
+    logger.info("Processing %d polygon(s) for post-processing...", len(polygonProcessing))
+    for osmId, name, tileType, geometry in polygonProcessing:
+        poiId = insertOrGetPostProcessingPoi(osmId, name, tileType)
+
+        allCells = []
+        if isinstance(geometry, Polygon):
+            coords = list(geometry.exterior.coords)
+            h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
+            allCells = h3.polygon_to_cells(h3Polygon, res=10)
+        elif isinstance(geometry, MultiPolygon):
+            for poly in geometry.geoms:
+                coords = list(poly.exterior.coords)
+                h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
+                allCells.extend(h3.polygon_to_cells(h3Polygon, res=10))
+
+        for cell in allCells:
+            if cell in uniqueLevel10Children:
+                insertJunctionEntry(cell, poiId)
+
+    totalTilesProcessed = 0
+    totalTilesSkipped = 0
+
+    logger.info("Caching %d level-10 tile(s)...", len(uniqueLevel10Children))
+    for level10Cell in tqdm(uniqueLevel10Children, desc="Caching tiles"):
+        if skipCached and getTile(level10Cell):
+            totalTilesSkipped += 1
+            continue
+
+        elements = elementsByTile.get(level10Cell, [])
+        waypoints, tileType = filterWaypointsForCache(elements)
+        setTile(level10Cell, tileType, waypoints)
+        totalTilesProcessed += 1
+
+    logger.info("Finished: processed %d tiles, skipped %d tiles", totalTilesProcessed, totalTilesSkipped)
+
+
 def fillPolygonInteriors() -> None:
     """Fill interior tiles based on stored polygons.
     
@@ -266,7 +442,7 @@ def fillPolygonInteriors() -> None:
     pois = getAllPostProcessingPois()
     logger.info("Found %d polygons to process", len(pois))
 
-    for poi in pois:
+    for poi in tqdm(pois, desc="Post-processing PoIs"):
         # Get all H3 tiles linked to this polygon via junction table
         tiles = getTilesForPostProcessingPoi(poi['id'])
         logger.debug("Processing polygon %d with %d linked tiles", poi['id'], len(tiles))
@@ -384,9 +560,8 @@ def main() -> None:
         uniqueChildren = list(dict.fromkeys(allChildren))
         logger.info("Dry run: would process %d level-10 tiles", len(uniqueChildren))
     else:
-        # Determine whether to skip already-cached tiles
         skipCached = not args.no_cache
-        populateCacheForTiles(h3Cells, skipCached=skipCached)
+        populateCacheForTiles(h3Cells, skipCached=skipCached, queryResolution=5)
         logger.info("Successfully processed %d H3 parent tile(s)", len(h3Cells))
 
     # Second pass: fill interior tiles of polygon features
