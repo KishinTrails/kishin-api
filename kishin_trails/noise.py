@@ -32,7 +32,7 @@ else:
 
 
 @router.post("/cells", response_model=List[NoiseResponse])  # type: ignore[union-attr]
-async def getCellNoise(request: NoiseRequest):
+def getCellNoise(request: NoiseRequest):
     """
     Get Perlin noise values for multiple H3 cells.
     
