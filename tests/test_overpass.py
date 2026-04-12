@@ -20,7 +20,6 @@ from kishin_trails.overpass import (
     CACHE_DIR,
     DEFAULT_CENTER_LAT,
     DEFAULT_CENTER_LON,
-    DEFAULT_OVERPASS_RADIUS_M,
     buildBbox,
     runOverpass,
     osmToGeoDataFrames,
@@ -36,7 +35,6 @@ def test_defaults_are_reasonable():
     assert CACHE_DIR.is_dir()  # the directory is created on import
     assert isinstance(DEFAULT_CENTER_LAT, float)
     assert isinstance(DEFAULT_CENTER_LON, float)
-    assert isinstance(DEFAULT_OVERPASS_RADIUS_M, (int, float))
 
 
 # -----------------------------------------------------------------
