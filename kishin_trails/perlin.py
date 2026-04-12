@@ -385,7 +385,7 @@ def perlin(x: float, y: float) -> float:
 # pylint: enable=invalid-name
 
 
-def getNoiseValue(mercX: float, mercY: float, scale: int, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
+def getNoiseValue(mercX: float, mercY: float, scale: int | None = None, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
     """
     Multi-octave Perlin noise at Mercator coordinates.
 
@@ -399,13 +399,15 @@ def getNoiseValue(mercX: float, mercY: float, scale: int, octaves: int | None = 
     Args:
         mercX: X coordinate in Mercator space (0-1 range, like MapLibre)
         mercY: Y coordinate in Mercator space (0-1 range, like MapLibre)
-        scale: Noise scale factor (same as frontend scale parameter)
+        scale: Noise scale factor (defaults to settings.NOISE_SCALE)
         octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
         amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
 
     Returns:
         Noise value in range [0, 1]
     """
+    if scale is None:
+        scale = settings.NOISE_SCALE
     if octaves is None:
         octaves = settings.NOISE_OCTAVES
     if amplitudeDecay is None:
@@ -459,7 +461,7 @@ def latLngToMercator(lat: float, lng: float) -> Tuple[float, float]:
     return mercX, mercY
 
 
-def getNoiseForCell(cell: str, scale: int, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
+def getNoiseForCell(cell: str, scale: int | None = None, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
     """
     Get Perlin noise value for an H3 cell by sampling its center.
 
@@ -472,13 +474,15 @@ def getNoiseForCell(cell: str, scale: int, octaves: int | None = None, amplitude
 
     Args:
         cell: H3 cell index (resolution 10)
-        scale: Noise scale factor (same as frontend scale parameter)
+        scale: Noise scale factor (defaults to settings.NOISE_SCALE)
         octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
         amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
 
     Returns:
         Noise value in range [0, 1]
     """
+    if scale is None:
+        scale = settings.NOISE_SCALE
     if octaves is None:
         octaves = settings.NOISE_OCTAVES
     if amplitudeDecay is None:
