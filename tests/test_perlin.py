@@ -18,7 +18,6 @@ from kishin_trails.perlin import (
 
 class TestFade:
     """Test the fade function for smooth interpolation."""
-
     def test_fade_zero(self):
         """Test fade with input 0."""
         result = fade(0.0)
@@ -47,7 +46,6 @@ class TestFade:
 
 class TestLerp:
     """Test the linear interpolation function."""
-
     def test_lerp_start(self):
         """Test lerp at t=0 returns start value."""
         result = lerp(10.0, 20.0, 0.0)
@@ -76,7 +74,6 @@ class TestLerp:
 
 class TestGrad:
     """Test the gradient function."""
-
     def test_grad_hash_0(self):
         """Test grad with hash value 0."""
         result = grad(0, 1.0, 1.0)
@@ -105,7 +102,6 @@ class TestGrad:
 
 class TestPerlin:
     """Test the Perlin noise function."""
-
     def test_perlin_origin(self):
         """Test Perlin noise at origin."""
         result = perlin(0.0, 0.0)
@@ -134,7 +130,6 @@ class TestPerlin:
 
 class TestGetNoiseValue:
     """Test the multi-octave noise value function."""
-
     def test_getNoiseValue_defaults(self):
         """Test getNoiseValue with default parameters."""
         result = getNoiseValue(0.5, 0.5, 50)
@@ -167,7 +162,6 @@ class TestGetNoiseValue:
 
 class TestLatLngToMercator:
     """Test latitude/longitude to Mercator conversion."""
-
     def test_latLngToMercator_equator(self):
         """Test conversion at the equator."""
         mercX, mercY = latLngToMercator(0.0, 0.0)
@@ -195,7 +189,6 @@ class TestLatLngToMercator:
 
 class TestGetNoiseForCell:
     """Test the H3 cell noise function with caching."""
-
     @pytest.fixture
     def valid_h3_cell(self):
         """Provide a valid H3 cell for testing."""
@@ -213,16 +206,16 @@ class TestGetNoiseForCell:
 
     def test_getNoiseForCell_cache_hit(self, valid_h3_cell):
         """Test getNoiseForCell uses cache on second call."""
-        from kishin_trails.noise_cache_sqlite import getCachedNoise, setCachedNoise, clearCache, initCache
-        
+        from kishin_trails.noise_cache import getCachedNoise, setCachedNoise, clearCache, initCache
+
         initCache()
         clearCache()
-        
+
         first_call = getNoiseForCell(valid_h3_cell, 50, 3, 0.5)
         cached_value = getCachedNoise(valid_h3_cell, 50, 3, 0.5)
-        
+
         assert cached_value == first_call
-        
+
         second_call = getNoiseForCell(valid_h3_cell, 50, 3, 0.5)
         assert second_call == first_call
 
@@ -230,8 +223,8 @@ class TestGetNoiseForCell:
         """Test different H3 cells produce different noise values."""
         cell1 = "8a2a1072b597fff"
         cell2 = "8a2a1072b59ffff"
-        
+
         result1 = getNoiseForCell(cell1, 50)
         result2 = getNoiseForCell(cell2, 50)
-        
+
         assert result1 != result2
