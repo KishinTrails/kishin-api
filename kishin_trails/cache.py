@@ -13,6 +13,7 @@ from sqlalchemy.orm import joinedload
 
 from kishin_trails.database import SESSION_LOCAL, engine, Base
 from kishin_trails.models import PostProcessingPoI, Tile, POI
+from kishin_trails.perlin import isCellActive
 
 logger = logging.getLogger("cache")
 
@@ -75,9 +76,10 @@ def _queryTilesOrm(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any] | No
                     "elevation": poi.elevation
                 }
             )
+        tileType = tile.tile_type if tile.active else None
         results[tile.h3_cell] = {
             "h3_cell": tile.h3_cell,
-            "tile_type": tile.tile_type,
+            "tile_type": tileType,
             "pois": pois
         }
     return results
@@ -112,7 +114,7 @@ def _queryTilesSql(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any] | No
                 f"""
             SELECT
                 t.h3_cell,
-                t.tile_type,
+                CASE WHEN t.active = 1 THEN t.tile_type ELSE NULL END as tile_type,
                 p.osm_id,
                 p.name,
                 p.lat,
@@ -204,13 +206,16 @@ def setTile(h3Cell: str, tileType: Optional[str], pois: List[Dict[str, Any]]) ->
     """
     session = SESSION_LOCAL()
     try:
+        isActive = isCellActive(h3Cell)
+        
         tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
         if tile:
             # Update tile_type only if currently NULL (completes partial tiles)
             if tile.tile_type is None and tileType is not None:
                 tile.tile_type = tileType
+            tile.active = isActive
         else:
-            tile = Tile(h3_cell=h3Cell, tile_type=tileType)
+            tile = Tile(h3_cell=h3Cell, tile_type=tileType, active=isActive)
             session.add(tile)
 
         existingOsmIds = {poi.osm_id
