@@ -498,3 +498,22 @@ def getNoiseForCell(cell: str, scale: int | None = None, octaves: int | None = N
 
     setCachedNoise(cell, scale, octaves, amplitudeDecay, value)
     return value
+
+
+def isCellActive(cell: str, scale: int | None = None, octaves: int | None = None, amplitudeDecay: float | None = None) -> bool:
+    """
+    Check if an H3 cell is active based on its Perlin noise value.
+
+    A cell is considered active if its noise value exceeds the configured threshold.
+
+    Args:
+        cell: H3 cell index (resolution 10)
+        scale: Noise scale factor (defaults to settings.NOISE_SCALE)
+        octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
+        amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
+
+    Returns:
+        True if the cell is active (noise > threshold), False otherwise
+    """
+    noiseValue = getNoiseForCell(cell, scale, octaves, amplitudeDecay)
+    return noiseValue > settings.NOISE_ACTIVITY_THRESHOLD

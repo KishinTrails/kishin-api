@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     NOISE_SCALE: int = 50
     NOISE_OCTAVES: int = 3
     NOISE_AMPLITUDE_DECAY: float = 0.5
+    NOISE_ACTIVITY_THRESHOLD: float = 0.5
 
     # Load from .env file if it exists
     model_config = SettingsConfigDict(env_file=".env")
