@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/logo.png" alt="Kishin Trails Logo" width="200"/>
+  <img src="logo.png" alt="Kishin Trails Logo" width="200"/>
 </p>
 
 # Kishin Trails API
