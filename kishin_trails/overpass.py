@@ -128,9 +128,9 @@ def runOverpass(query: str, cacheDir: Path | None = None) -> dict:
     hashKey = hashlib.md5(query.encode()).hexdigest()
     cacheFile = (cacheDir or CACHE_DIR) / f"{hashKey}.json"
     if cacheFile.exists():
-        logger.info("Overpass cache hit (%s)", hashKey)
+        logger.debug("Overpass cache hit (%s)", hashKey)
         return json.loads(cacheFile.read_text())
-    logger.info("Querying Overpass API…")
+    logger.debug("Querying Overpass API…")
     response = requests.post(
         OVERPASS_URL,
         data={
@@ -141,7 +141,7 @@ def runOverpass(query: str, cacheDir: Path | None = None) -> dict:
     response.raise_for_status()
     data = response.json()
     cacheFile.write_text(json.dumps(data))
-    logger.info("Overpass response cached (%s)", hashKey)
+    logger.debug("Overpass response cached (%s)", hashKey)
     return data
 
 
@@ -370,7 +370,7 @@ def loadElementsAt(
     nodesGdf["osm_type"] = "node"
     combined = gpd.pd.concat([waysGdf, relationsGdf, nodesGdf], ignore_index=True)
     combined = gpd.GeoDataFrame(combined, crs="EPSG:4326")
-    logger.info(
+    logger.debug(
         "Pipeline complete — %d ways, %d relations, %d nodes (%d total, %d with geometry)",
         len(waysGdf),
         len(relationsGdf),

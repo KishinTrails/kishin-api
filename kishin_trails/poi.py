@@ -195,24 +195,24 @@ def filterWaypointsForCache(elements: List[dict]) -> Tuple[List[dict], str | Non
     # Peaks have highest priority. First filter for peaks.
     peaks = [p for p in pois if isinstance(p, PeakPoI) and p.name]
     if len(peaks) == 1:
-        logger.info(f"Single peak found: {peaks[0].name} (ID: {peaks[0].osmId}, Elevation: {peaks[0].elevation}m)")
+        logger.debug(f"Single peak found: {peaks[0].name} (ID: {peaks[0].osmId}, Elevation: {peaks[0].elevation}m)")
         return [peaks[0].toDict()], "peak"
     if len(peaks) > 1:
         # Multiple peaks found, choose the one with highest elevation.
-        peaks = sorted(peaks, key=lambda p: -int(p.elevation) if p.elevation is not None else p.osmId)
-        logger.info(
+        peaks = sorted(peaks, key=lambda p: -int(float(p.elevation)) if p.elevation is not None else p.osmId)
+        logger.debug(
             f"Multiple peaks found, selecting highest: {peaks[0].name} (ID: {peaks[0].osmId}, Elevation: {peaks[0].elevation}m)"
         )
         return [peaks[0].toDict()], "peak"
 
     # If no peaks, look for industrial features.
     if any(isinstance(p, IndustrialPoI) for p in pois):
-        logger.info(f"Industrial feature found: {[p.name for p in pois if isinstance(p, IndustrialPoI) and p.name]}")
+        logger.debug(f"Industrial feature found: {[p.name for p in pois if isinstance(p, IndustrialPoI) and p.name]}")
         return [], "industrial"
 
     # If no industrial features, look for natural features.
     if any(isinstance(p, NaturalPoI) for p in pois):
-        logger.info(f"Natural feature found: {[p.name for p in pois if isinstance(p, NaturalPoI) and p.name]}")
+        logger.debug(f"Natural feature found: {[p.name for p in pois if isinstance(p, NaturalPoI) and p.name]}")
         return [], "natural"
 
     return [], None
