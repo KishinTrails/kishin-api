@@ -4,7 +4,7 @@ SQLAlchemy models for the Kishin API.
 Defines the database schema for users, tiles (H3 cells), and Points of Interest.
 """
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from kishin_trails.database import Base
@@ -43,6 +43,7 @@ class Tile(Base):
 
     h3_cell = Column(String, primary_key=True)
     tile_type = Column(String)
+    active = Column(Boolean)
     pois = relationship("POI", back_populates="tile", cascade="all, delete-orphan")
     post_processing_pois = relationship(
         "PostProcessingPoI",
