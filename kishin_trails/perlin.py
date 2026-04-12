@@ -12,6 +12,7 @@ from shapely.geometry import Point
 from typing import Tuple
 
 from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
+from kishin_trails.config import settings
 import h3
 
 # Exact permutation table from frontend (256 elements)
@@ -384,7 +385,7 @@ def perlin(x: float, y: float) -> float:
 # pylint: enable=invalid-name
 
 
-def getNoiseValue(mercX: float, mercY: float, scale: int, octaves: int = 3, amplitudeDecay: float = 0.5) -> float:
+def getNoiseValue(mercX: float, mercY: float, scale: int, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
     """
     Multi-octave Perlin noise at Mercator coordinates.
 
@@ -399,12 +400,17 @@ def getNoiseValue(mercX: float, mercY: float, scale: int, octaves: int = 3, ampl
         mercX: X coordinate in Mercator space (0-1 range, like MapLibre)
         mercY: Y coordinate in Mercator space (0-1 range, like MapLibre)
         scale: Noise scale factor (same as frontend scale parameter)
-        octaves: Number of noise octaves (default 3)
-        amplitudeDecay: Amplitude decay factor per octave (default 0.5)
+        octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
+        amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
 
     Returns:
         Noise value in range [0, 1]
     """
+    if octaves is None:
+        octaves = settings.NOISE_OCTAVES
+    if amplitudeDecay is None:
+        amplitudeDecay = settings.NOISE_AMPLITUDE_DECAY
+
     value = 0.0
     amplitude = 1.0
     frequency = scale * 500
@@ -453,7 +459,7 @@ def latLngToMercator(lat: float, lng: float) -> Tuple[float, float]:
     return mercX, mercY
 
 
-def getNoiseForCell(cell: str, scale: int, octaves: int = 3, amplitudeDecay: float = 0.5) -> float:
+def getNoiseForCell(cell: str, scale: int, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
     """
     Get Perlin noise value for an H3 cell by sampling its center.
 
@@ -467,12 +473,17 @@ def getNoiseForCell(cell: str, scale: int, octaves: int = 3, amplitudeDecay: flo
     Args:
         cell: H3 cell index (resolution 10)
         scale: Noise scale factor (same as frontend scale parameter)
-        octaves: Number of noise octaves (default 3)
-        amplitudeDecay: Amplitude decay factor per octave (default 0.5)
+        octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
+        amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
 
     Returns:
         Noise value in range [0, 1]
     """
+    if octaves is None:
+        octaves = settings.NOISE_OCTAVES
+    if amplitudeDecay is None:
+        amplitudeDecay = settings.NOISE_AMPLITUDE_DECAY
+
     cached = getCachedNoise(cell, scale, octaves, amplitudeDecay)
     if cached is not None:
         return cached
