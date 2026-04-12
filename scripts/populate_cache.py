@@ -24,7 +24,7 @@ from kishin_trails.poi import filterWaypointsForCache
 from kishin_trails.utils import getH3Circle, pointInH3Hexagon, getH3Cell
 
 logging.basicConfig(
-    level=logging.WARN,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger("populate_cache")
