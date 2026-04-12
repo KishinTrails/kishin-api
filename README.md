@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo.png" alt="Kishin Trails Logo" width="200"/>
+</p>
+
 # Kishin Trails API
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
