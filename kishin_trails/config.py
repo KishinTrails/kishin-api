@@ -19,8 +19,6 @@ class Settings(BaseSettings):
         OVERPASS_URL: Base URL for the Overpass API endpoint.
         DEFAULT_CENTER_LAT: Default latitude for Overpass queries.
         DEFAULT_CENTER_LON: Default longitude for Overpass queries.
-        DEFAULT_OVERPASS_RADIUS_M: Default search radius in meters for Overpass queries.
-        DEFAULT_POI_RADIUS_M: Default search radius in meters for POI queries.
         DEBUG_LOCATIONS: Dictionary of debug locations (loaded from .env, not committed).
     """
 
@@ -36,8 +34,6 @@ class Settings(BaseSettings):
     OVERPASS_URL: str = "https://overpass-api.de/api/interpreter"
     DEFAULT_CENTER_LAT: float = 48.85454010062465
     DEFAULT_CENTER_LON: float = 2.3476249395829583
-    DEFAULT_OVERPASS_RADIUS_M: int = 10_000
-    DEFAULT_POI_RADIUS_M: int = 1000
 
     # Debug locations (loaded from .env, not committed)
     DEBUG_LOCATIONS: dict[str,
