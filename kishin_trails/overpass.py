@@ -31,7 +31,6 @@ CACHE_DIR = CACHE_DIR_REAL
 
 DEFAULT_CENTER_LAT = settings.DEFAULT_CENTER_LAT
 DEFAULT_CENTER_LON = settings.DEFAULT_CENTER_LON
-DEFAULT_OVERPASS_RADIUS_M = settings.DEFAULT_OVERPASS_RADIUS_M
 
 # ---------------------------------------------------------------------------
 # Bounding box utilities
@@ -327,24 +326,6 @@ def removeWaysInsideRelations(waysGdf: gpd.GeoDataFrame, relationsGdf: gpd.GeoDa
 # ---------------------------------------------------------------------------
 # Full pipeline used by API and tests
 # ---------------------------------------------------------------------------
-
-
-def loadElements(
-    centerLat: float = DEFAULT_CENTER_LAT,
-    centerLon: float = DEFAULT_CENTER_LON,
-    radiusM: float = DEFAULT_OVERPASS_RADIUS_M,
-) -> gpd.GeoDataFrame:
-    """Load OSM elements for given center coordinates.
-
-    Args:
-        centerLat: Center latitude in decimal degrees.
-        centerLon: Center longitude in decimal degrees.
-        radiusM: Search radius in meters.
-
-    Returns:
-        GeoDataFrame containing OSM elements (ways, relations, and nodes).
-    """
-    return loadElementsAt(centerLat, centerLon, radiusM)
 
 
 def loadElementsAt(

@@ -33,7 +33,6 @@ logger = logging.getLogger("PoI")
 
 DEFAULT_CENTER_LAT = settings.DEFAULT_CENTER_LAT
 DEFAULT_CENTER_LON = settings.DEFAULT_CENTER_LON
-DEFAULT_POI_RADIUS_M = settings.DEFAULT_POI_RADIUS_M
 
 if APIRouter:
     router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(getCurrentUser)])
