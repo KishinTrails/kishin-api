@@ -4,13 +4,17 @@
 
 # Kishin Trails API
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python)](https://www.python.org/)
-[![Poetry](https://img.shields.io/badge/Poetry-1.8+-60A5FA?logo=python)](https://python-poetry.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.128+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python)](https://www.python.org/)
+[![Poetry](https://img.shields.io/badge/Poetry-2.0+-60A5FA?logo=python)](https://python-poetry.org/)
+
+---
 
 ## ⚠️ WARNING: Under Heavy Development ⚠️
 
 **This project is currently under active and heavy development. It is NOT ready for general use and may contain bugs, incomplete features, or breaking changes. Use at your own risk.**
+
+---
 
 Backend API service for the Kishin Trails project, providing OSM data integration, user authentication, and geo-spatial operations with H3 fog-of-war mechanics.
 
@@ -20,23 +24,12 @@ Backend API service for the Kishin Trails project, providing OSM data integratio
 - **POI Discovery** - Points of interest from OpenStreetMap (peaks, natural areas, industrial zones)
 - **H3 Geospatial Indexing** - Uber's hexagonal spatial index for location-based queries
 - **Exploration Tracking** - Track user-explored H3 cells for fog-of-war mechanics
-- **Caching Layer** - SQLite-based caching for POI data to reduce Overpass API calls
-- **GPX Import** - Import hiking trails from GPX files
-
-## Tech Stack
-
-- **Framework**: FastAPI with async support
-- **Database**: SQLite with SQLAlchemy ORM
-- **Geospatial**: Shapely, GeoPandas, H3
-- **Authentication**: JWT with pwdlib
-- **Data**: OpenStreetMap via Overpass API
-- **Testing**: pytest with pytest-asyncio
-- **Package Management**: Poetry
+- **GPX Import Script** - CLI tool to import hiking trails from GPX files
 
 ## Prerequisites
 
-- Python 3.12 or later
-- Poetry 1.8 or later
+- Python 3.13 or later
+- Poetry 2.0 or later
 - [kishin-frontend](https://github.com/KishinTrails/kishin-frontend) (optional, for UI)
 
 ## Getting Started
@@ -45,21 +38,11 @@ Backend API service for the Kishin Trails project, providing OSM data integratio
 
 ```bash
 poetry install
-poetry shell
 ```
 
 ### Environment Configuration
 
-Create a `.env` file in the project root:
-
-```env
-SECRET_KEY=your-secret-key-here
-DATABASE_URL=sqlite:///kishin.db
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-DEFAULT_CENTER_LAT=45.0
-DEFAULT_CENTER_LON=6.0
-DEFAULT_POI_RADIUS_M=100
-```
+Create a `.env` file in the project root.
 
 **Required variables:**
 - `SECRET_KEY` - For JWT token signing
@@ -79,180 +62,108 @@ Interactive API docs are available at:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
-## Available Scripts
+These provide comprehensive, always-up-to-date documentation of all available endpoints, request/response schemas, and authentication requirements.
 
-| Command | Description |
-|---------|-------------|
-| `poetry run python -m kishin_trails.main` | Start development server |
-| `poetry run pytest -v` | Run all tests |
-| `poetry run pytest --cov=kishin_trails -v` | Run tests with coverage |
-| `poetry install` | Install dependencies |
-| `poetry shell` | Activate virtual environment |
+## CLI Scripts
 
-## API Endpoints
+### `import_gpx.py` - Import GPX Tracks
 
-### Authentication
+Import GPX files and mark H3 cells as explored for a user.
 
-- **POST** `/auth/register` - Register new user
-  - Body: `{ "username": "string", "password": "string" }`
-  - Returns: User object with id and username
-
-- **POST** `/auth/login` - Login to receive JWT
-  - Body: `application/x-www-form-urlencoded` with `username` and `password`
-  - Returns: `{ "access_token": "string", "token_type": "bearer" }`
-
-- **GET** `/me` - Get current user info (protected)
-  - Headers: `Authorization: Bearer <token>`
-  - Returns: `{ "username": "string", "id": integer }`
-
-### POI (Points of Interest)
-
-All POI endpoints require authentication.
-
-- **GET** `/poi/bycell?h3Cell={cell}` - Get POI for single H3 cell
-  - Query: `h3Cell` - H3 cell identifier (e.g., `851f9633fffffff`)
-  - Returns: POI data with type, center coordinates, and POI details
-  - Status 404: No POI data for this cell
-
-- **GET** `/poi/bycells?h3Cells={cell1}&h3Cells={cell2}...` - Batch fetch POIs
-  - Query: `h3Cells` - List of H3 cell identifiers (up to 100)
-  - Returns: `{ "cells": [...], "count": integer }`
-  - Status 204: No valid tiles found
-
-### Trails
-
-All trails endpoints require authentication.
-
-- **GET** `/trails/explored` - Get user's explored H3 cells
-  - Returns: `{ "explored": ["851f9633fffffff", ...] }`
-
-### Root
-
-- **GET** `/` - Public root endpoint
-  - Returns: Welcome message
-
-## Data Models
-
-### User
-```json
-{
-  "id": 1,
-  "username": "string"
-}
+```bash
+poetry run python scripts/import_gpx.py <gpx_file> --user <username> [--resolution 10] [--dry-run]
 ```
 
-### Token
-```json
-{
-  "access_token": "string",
-  "token_type": "bearer"
-}
+**Arguments:**
+- `gpx_file` - Path to GPX file
+- `--user` - Username to associate explored cells with
+- `--resolution` - H3 resolution (default: 10)
+- `--dry-run` - Show what would be imported without saving
+
+### `debug_geo.py` - Debug Geo/H3/Overpass Utilities
+
+Debug tool for testing coordinates, H3 cells, and Overpass queries.
+
+```bash
+poetry run python scripts/debug_geo.py --location <name> [--overpass] [--execute]
+poetry run python scripts/debug_geo.py --lat <lat> --lng <lng> [--resolution 10]
+poetry run python scripts/debug_geo.py --h3-cell <cell_id> [--level 0]
+poetry run python scripts/debug_geo.py --list-locations
 ```
 
-### POI Response
+**Arguments:**
+- `--location` - Use predefined location from DEBUG_LOCATIONS
+- `--lat` / `--lng` - Use specific coordinates
+- `--h3-cell` - Use specific H3 cell
+- `--resolution` - H3 resolution (default: 10)
+- `--level` - H3 parent level for search (default: 0)
+- `--radius` - Override radius in meters
+- `--overpass` - Output Overpass query
+- `--execute` - Execute the Overpass query
+- `--list-locations` - List available debug locations
+
+### `find_perlin_params.py` - Find Optimal Perlin Noise Parameters
+
+Test Perlin noise parameter combinations against H3 cells with configurable conditions to find optimal configurations.
+
+```bash
+poetry run python scripts/find_perlin_params.py --config <config.json> [--no-cache]
+```
+
+**Arguments:**
+- `--config` - Path to JSON configuration file with conditions and state_space
+- `--no-cache` - Run without using or saving to cache
+
+**Config file format:**
 ```json
 {
-  "h3_cell": "851f9633fffffff",
-  "type": "peak|natural|industrial",
-  "center": {
-    "lat": 45.123,
-    "lng": 6.456
-  },
-  "count": 1,
-  "poi": {
-    "id": 123456,
-    "name": "Mont Blanc",
-    "geometry": "POINT(...)",
-    "elevation": 4809
+  "conditions": [
+    {"type": "min_active", "cells": [...], "count": 5},
+    {"type": "cell_must_be_active", "cells": ["851f9633fffffff"]}
+  ],
+  "state_space": {
+    "scale": {"min": 50, "max": 300, "step": 10},
+    "threshold": {"min": 0.3, "max": 0.7, "step": 0.05},
+    "octaves": {"min": 2, "max": 4, "step": 1},
+    "amplitudeDecay": {"min": 0.4, "max": 0.6, "step": 0.1}
   }
 }
 ```
 
-### Explored Tiles
-```json
-{
-  "explored": ["851f9633fffffff", "851f9637fffffff"]
-}
-```
+### `populate_cache.py` - Pre-populate POI Cache
 
-## Testing
-
-### Run All Tests
+Populate cache with POI data for H3 tiles. Takes comma-separated H3 cell IDs as argument.
 
 ```bash
-poetry run pytest -v
+poetry run python scripts/populate_cache.py 851f9633fffffff,851f9637fffffff [--dry-run] [--fill-polygons] [--no-cache]
 ```
 
-### Run Single Test
-
-```bash
-poetry run pytest test/test_overpass.py::test_defaults_are_reasonable -v
-```
-
-### Run with Coverage
-
-```bash
-poetry run pytest --cov=kishin_trails -v
-```
-
-Coverage reports are generated in `.coverage`.
-
-## Code Quality
-
-### Type Checking
-
-The project uses strict type hints throughout. Run mypy (if configured):
-
-```bash
-poetry run mypy kishin_trails/
-```
-
-### Logging
-
-Logs are configured with format: `%(asctime)s [%(levelname)s] %(name)s — %(message)`
-
-Module-specific loggers are used (e.g., `logging.getLogger("PoI")`).
+**Arguments:**
+- `h3_cells` - Comma-separated H3 cell IDs (resolution <= 10), e.g., `'tile1,tile2,tile3'`
+- `--dry-run` - Print what would be done without actually caching
+- `--fill-polygons` - Run polygon interior filling after processing tiles (second pass)
+- `--fill-only` - Only run polygon filling, skip tile processing
+- `--no-cache` - Re-process all tiles, inserting only missing POIs (preserve existing data)
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
+GitHub Actions workflows run on every push and pull request to `main`:
 
-1. Install dependencies
-2. Run linting
-3. Run tests with coverage
-4. Build validation
+**Linting** (`.github/workflows/lint.yaml`):
+- Run pylint with custom configuration (fail under 9.5)
+- Run ty type checker
 
-## 🧪 Quality and Testing
-
-Kishin Trails uses **AI-assisted development** tools to accelerate coding, followed by **human validation** and **automated tests** for correctness.
-
-- pytest for unit and integration tests
-- pytest-asyncio for async test support
-- SQLite in-memory database for test isolation
-- Mocked external services (Overpass API)
-
----
+**Testing** (`.github/workflows/test.yaml`):
+- Run pytest with coverage reporting
 
 ## 🔗 Useful Links
 
 - [H3 Viewer](https://clupasq.github.io/h3-viewer/) - Visualize H3 cells
 - [Overpass Turbo](https://overpass-turbo.eu) - Query and explore OSM data
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [Shapely Documentation](https://shapely.readthedocs.io/)
-
----
 
 ## 📂 Related Projects
 
-- [kishin-api](https://github.com/KishinTrails/kishin-api) - This repository
 - [kishin-frontend](https://github.com/KishinTrails/kishin-frontend) - Vue 3/Ionic mobile frontend
-
----
-
-## 📜 License
-
-This project is released under the [MIT License](LICENSE).
 
 ---
 
