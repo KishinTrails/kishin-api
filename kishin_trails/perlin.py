@@ -11,10 +11,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 from typing import Tuple
 
-try:
-    from kishin_trails.noise_cache_sqlite import getCachedNoise, setCachedNoise
-except ImportError:
-    from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
+from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
 import h3
 
 # Exact permutation table from frontend (256 elements)

@@ -124,3 +124,26 @@ class PostProcessingPoI(Base):
         secondary="tile_post_processing_pois",
         back_populates="post_processing_pois"
     )
+
+
+class NoiseCache(Base):
+    """Cache model for Perlin noise values.
+
+    Stores computed Perlin noise values for H3 cells to avoid redundant calculations.
+    Uses composite primary key to ensure one entry per unique parameter combination.
+
+    Attributes:
+        cell: H3 cell identifier (primary key component).
+        scale: Noise scale parameter (primary key component).
+        octaves: Number of noise octaves (primary key component).
+        amplitude_decay: Amplitude decay factor per octave (primary key component).
+        noise_value: Computed noise value in range [0, 1].
+    """
+
+    __tablename__ = "noise_cache"
+
+    cell = Column(String, primary_key=True)
+    scale = Column(Integer, primary_key=True)
+    octaves = Column(Integer, primary_key=True)
+    amplitude_decay = Column(Float, primary_key=True)
+    noise_value = Column(Float, nullable=False)

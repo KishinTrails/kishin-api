@@ -12,12 +12,11 @@ import argparse
 import json
 from typing import Any
 
+from multiprocessing import Pool
 from tqdm import tqdm
-from tqdm.contrib.concurrent import process_map
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from kishin_trails.noise_cache_sqlite import initCache, loadCache, clearCache
 from kishin_trails.perlin import getNoiseForCell
+from kishin_trails.database import engine, Base
 
 
 def loadConfig(configPath: str) -> dict[str, Any]:
@@ -54,10 +53,18 @@ def isActive(cell: str, scale: int, threshold: float, octaves: int = 3, amplitud
     return noiseValue > threshold
 
 
-def checkCondition(condition: dict[str, Any], scale: int, threshold: float, octaves: int = 3, amplitudeDecay: float = 0.5) -> tuple[bool, str]:
+def checkCondition(
+    condition: dict[str,
+                    Any],
+    scale: int,
+    threshold: float,
+    octaves: int = 3,
+    amplitudeDecay: float = 0.5
+) -> tuple[bool,
+           str]:
     """
     Check if a condition is satisfied.
-  
+
     Returns:
         Tuple of (is_satisfied, message)
     """
@@ -111,19 +118,18 @@ def checkCondition(condition: dict[str, Any], scale: int, threshold: float, octa
     raise ValueError(f"Unknown condition type: {conditionType}")
 
 
-def testParameters(conditions: list[dict[str,
-                                         Any]],
-                   scale: int,
-                   threshold: float,
-                   octaves: int = 3,
-                   amplitudeDecay: float = 0.5) -> tuple[bool,
-                                                         list[str],
-                                                         list[str | None]]:
+def testParameters(
+    conditions: list[dict[str,
+                          Any]],
+    scale: int,
+    threshold: float,
+    octaves: int = 3,
+    amplitudeDecay: float = 0.5
+) -> tuple[bool,
+           list[str],
+           list[str | None]]:
     """
     Evaluate all conditions against the given scale and threshold parameters.
-
-    Iterates through each condition and checks if it's satisfied by the
-    current parameter combination.
 
     Args:
         conditions: List of condition dictionaries to evaluate.
@@ -151,15 +157,29 @@ def testParameters(conditions: list[dict[str,
     return allSatisfied, results, comments
 
 
-def testCombination(args: tuple[list[dict[str, Any]], int, float, int, float]) -> tuple[bool, list[str], list[str | None], int, float, int, float]:
+def testCombination(
+    args: tuple[list[dict[str,
+                          Any]],
+                int,
+                float,
+                int,
+                float]
+) -> tuple[bool,
+           list[str],
+           list[str | None],
+           int,
+           float,
+           int,
+           float]:
     """
     Worker function for multiprocessing.
-    
-    Each worker initializes its own SQLite connection for thread-safe caching.
-    
+
+    Each worker uses its own per-process SQLite engine (WAL mode) so cache
+    reads and writes don't contend across processes.
+
     Args:
         args: Tuple of (conditions, scale, threshold, octaves, amplitudeDecay)
-    
+
     Returns:
         Tuple of (satisfied, messages, comments, scale, threshold, octaves, amplitudeDecay)
     """
@@ -184,8 +204,18 @@ def generateStateSpace(stateSpace: dict[str, dict[str, float]]) -> list[tuple[in
     """
     scaleConfig = stateSpace["scale"]
     thresholdConfig = stateSpace["threshold"]
-    octavesConfig = stateSpace.get("octaves", {"min": 3, "max": 3, "step": 1})
-    amplitudeDecayConfig = stateSpace.get("amplitudeDecay", {"min": 0.5, "max": 0.5, "step": 0.1})
+    octavesConfig = stateSpace.get("octaves",
+                                   {
+                                       "min": 3,
+                                       "max": 3,
+                                       "step": 1
+                                   })
+    amplitudeDecayConfig = stateSpace.get("amplitudeDecay",
+                                          {
+                                              "min": 0.5,
+                                              "max": 0.5,
+                                              "step": 0.1
+                                          })
 
     scaleMin = int(scaleConfig["min"])
     scaleMax = int(scaleConfig["max"])
@@ -235,31 +265,24 @@ def main():
     1. Parses command-line arguments
     2. Loads configuration from JSON file
     3. Generates state space of parameter combinations
-    4. Tests each combination against all conditions
+    4. Tests each combination against all conditions in parallel workers
     5. Reports the first satisfying combination or indicates no solution found
     """
     parser = argparse.ArgumentParser(
         description="Test Perlin noise parameters against H3 cells with configurable conditions"
     )
     parser.add_argument("--config", type=str, required=True, help="Path to JSON configuration file")
-    parser.add_argument("--clear-cache", action="store_true", help="Clear the noise cache before running")
     parser.add_argument("--no-cache", action="store_true", help="Run without using or saving to cache")
 
     args = parser.parse_args()
 
-    if args.clear_cache:
-        clearCache()
-        print("Cache cleared")
-
-    initCache()
-    if not args.no_cache:
-        loadCache()
+    Base.metadata.create_all(bind=engine)
 
     config = loadConfig(args.config)
     conditions = config["conditions"]
     stateSpace = config["state_space"]
 
-    allCells = set()
+    allCells: set[str] = set()
     for condition in conditions:
         if "cells" in condition:
             allCells.update(condition["cells"])
@@ -272,27 +295,29 @@ def main():
     print()
 
     workItems = [
-        (conditions, scale, threshold, octaves, amplitudeDecay)
-        for scale, threshold, octaves, amplitudeDecay in combinations
+        (conditions,
+         scale,
+         threshold,
+         octaves,
+         amplitudeDecay) for scale, threshold, octaves, amplitudeDecay in combinations
     ]
 
     solution = None
-    with ProcessPoolExecutor() as executor:
-        futures = {executor.submit(testCombination, item): i for i, item in enumerate(workItems)}
-        
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Testing parameters"):
-            satisfied, messages, comments, scale, threshold, octaves, amplitudeDecay = future.result()
-            
+    with Pool() as pool:
+        for satisfied, messages, comments, scale, threshold, octaves, amplitudeDecay in tqdm(
+            pool.imap_unordered(testCombination, workItems),
+            total=len(workItems),
+            desc="Testing parameters",
+        ):
             if satisfied:
-                for f in futures:
-                    f.cancel()
+                pool.terminate()
                 solution = {
                     "scale": scale,
                     "threshold": threshold,
                     "octaves": octaves,
                     "amplitudeDecay": amplitudeDecay,
                     "messages": messages,
-                    "comments": comments
+                    "comments": comments,
                 }
                 break
 

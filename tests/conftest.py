@@ -4,28 +4,34 @@ Pytest configuration and shared fixtures.
 
 import os
 
-# FORCE the DATABASE_URL to a test-specific file before any kishin_trails modules are loaded
-os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+# Use the in-memory URL as the env var itself — this way any module that reads
+# DATABASE_URL from settings (including noise_cache_sqlite._get_session()) will
+# also get the in-memory database and never touch the filesystem.
+# The old "sqlite:///./test.db" guard was half-hearted: it prevented writes to
+# kishin.db but still created a test.db file on disk.
+os.environ["DATABASE_URL"] = "sqlite://"
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from kishin_trails.main import app
-from kishin_trails.database import Base, getDb, SESSION_LOCAL
+from kishin_trails.database import Base, getDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User, Tile, POI
 
-# --- Test Database Setup ---
-# We still use in-memory for speed in the fixtures,
-# but the env var above protects us from accidental disk writes to kishin.db.
-SQLALCHEMY_DATABASE_URL = "sqlite://"
+# ---------------------------------------------------------------------------
+# Single shared in-memory engine for the entire test session.
+# StaticPool ensures every connection (including from monkey-patched modules)
+# sees the same in-memory database instead of getting an independent blank one.
+# ---------------------------------------------------------------------------
+TEST_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
+    TEST_DATABASE_URL,
     connect_args={
         "check_same_thread": False
     },
@@ -33,12 +39,35 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Monkey-patch modules to use test database
+# ---------------------------------------------------------------------------
+# Monkey-patch every module that manages its own session or engine.
+#
+# - database_module / cache_module: patch SESSION_LOCAL (their public API).
+# - noise_cache: patch both SESSION_LOCAL and _LOCAL._session_factory so that
+#   all code paths (direct SESSION_LOCAL use and the lazy per-process
+#   _get_session() factory) hit the same test engine. Without both patches,
+#   initCache() creates the table on one engine while queries run against
+#   another, producing "no such table: noise_cache".
+# ---------------------------------------------------------------------------
 import kishin_trails.database as database_module
 import kishin_trails.cache as cache_module
+import kishin_trails.noise_cache as noise_cache_module
 
 database_module.SESSION_LOCAL = TestingSessionLocal
 cache_module.SESSION_LOCAL = TestingSessionLocal
+
+# Force noise_cache to use our test session factory immediately,
+# bypassing its lazy per-process engine creation entirely.
+noise_cache_module._LOCAL.session_factory = TestingSessionLocal
+
+# Create all tables on the test engine once at collection time.
+# This must happen at module level — not inside a fixture — because tests
+# like test_noise_cache and test_perlin call initCache() / clearCache()
+# directly without going through the db_session fixture. initCache() calls
+# Base.metadata.create_all(bind=<production engine>), which creates tables
+# on the wrong engine. By pre-creating them here on the test engine,
+# all TestingSessionLocal queries find the tables they expect.
+Base.metadata.create_all(bind=engine)
 
 
 @pytest.fixture(scope="function")
@@ -53,6 +82,9 @@ def db_session():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+        # Recreate immediately so tests that don't use this fixture
+        # (e.g. test_noise_cache, test_perlin) still find their tables.
+        Base.metadata.create_all(bind=engine)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -97,13 +129,6 @@ def cache_with_data():
     """
     Fixture that provides a function to pre-populate the cache with test POI data.
     """
-    import kishin_trails.cache as cache_module
-    import kishin_trails.database as db_module
-
-    # Ensure we're using the patched version
-    cache_module.SESSION_LOCAL = TestingSessionLocal
-    db_module.SESSION_LOCAL = TestingSessionLocal
-
     from kishin_trails.cache import setTile
 
     def _set_tile(h3_cell: str, tile_type: str | None, pois: list):
