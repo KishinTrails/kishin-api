@@ -22,7 +22,7 @@ CHUNK_SIZE = 1000
 
 def initDb() -> None:
     """Initialize the cache database tables.
-    
+
     Creates all necessary tables in the database if they don't exist.
     """
     Base.metadata.create_all(bind=engine)
@@ -114,7 +114,7 @@ def _queryTilesSql(session, h3Cells: List[str]) -> Dict[str, Dict[str, Any] | No
                 f"""
             SELECT
                 t.h3_cell,
-                CASE 
+                CASE
                     WHEN t.tile_type = 'peak' THEN t.tile_type
                     WHEN t.active = 1 THEN t.tile_type
                     ELSE NULL
