@@ -135,3 +135,47 @@ def cache_with_data():
         setTile(h3_cell, tile_type, pois)
 
     return _set_tile
+
+
+@pytest.fixture(scope="function")
+def mock_cell_activity(mocker):
+    """
+    Fixture to mock isCellActive for testing.
+
+    By default, all cells are active (returns True).
+    Call the returned function with a list of cell IDs to mark as inactive.
+
+    Usage:
+        def test_something(mock_cell_activity):
+            mock_cell_activity(inactive_cells=["8XXXXXXXXXXffff"])
+            # Now this specific cell will be inactive (returns False)
+            # All other cells remain active (return True)
+
+    Args:
+        mocker: pytest-mock fixture for patching.
+
+    Returns:
+        A function that accepts an optional inactive_cells list parameter.
+    """
+    from kishin_trails.cache import isCellActive
+
+    inactive_cells_set = set()
+
+    def mock_is_cell_active(cell: str, *args, **kwargs) -> bool:
+        return cell not in inactive_cells_set
+
+    def configure_mock(inactive_cells: list[str] | None = None):
+        """
+        Configure which cells should be inactive.
+
+        Args:
+            inactive_cells: List of H3 cell IDs that should return False (inactive).
+                           All other cells will return True (active).
+                           If None or empty list, all cells are active.
+        """
+        nonlocal inactive_cells_set
+        inactive_cells_set = set(inactive_cells) if inactive_cells else set()
+        mocker.patch("kishin_trails.cache.isCellActive", side_effect=mock_is_cell_active)
+
+    mocker.patch("kishin_trails.cache.isCellActive", side_effect=mock_is_cell_active)
+    return configure_mock
