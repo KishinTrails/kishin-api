@@ -5,6 +5,7 @@ Provides API endpoints for managing and retrieving user-explored H3 tiles,
 allowing users to track their exploration progress across the map.
 """
 
+import logging
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ from kishin_trails.database import getDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
 from kishin_trails.schemas import ExploredTilesOut
+
+logger = logging.getLogger("trails")
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, Depends
@@ -55,3 +58,15 @@ if router:
         return {
             "explored": explored
         }
+
+    @router.post(
+        "/explored",
+        summary="Log explored tiles request",
+    )
+    def logExploredTilesRequest(
+        currentUser: User = Depends(getCurrentUser),
+        _dbSession: Session = Depends(getDb),
+        cell: str | None = None,
+    ):
+        logger.info("POST /trails/explored — user: %s, cell: %s", currentUser.username, cell)
+        return None

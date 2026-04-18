@@ -13,6 +13,8 @@ from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
 
+from fastapi.middleware.cors import CORSMiddleware
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,6 +38,17 @@ app = FastAPI(
     description="",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include routers
