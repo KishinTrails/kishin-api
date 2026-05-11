@@ -1,40 +1,49 @@
 #!/usr/bin/env python
-"""Debug script for geo/H3/Overpass queries."""
+"""Debug script for geo/S2/Overpass queries."""
 
 import argparse
 import sys
 import os
 
-import h3
 import requests
 
-from kishin_trails.config import settings
-from kishin_trails.overpass import OVERPASS_URL, buildBbox, buildQuery
-from kishin_trails.utils import getH3Cell, getH3CellRadius, getH3Circle
+from kishin_trails.s2_utils import (
+    latLngToS2Cell,
+    s2CellIdToHex,
+    s2CellIdFromHex,
+    s2CellIdToLatLng,
+    getS2CellLevel,
+    s2CellToParent,
+    getS2CellBounds,
+    getS2CellCenter,
+    getS2EdgeLength,
+)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main():
-    """Main entry point for the debug geo/H3/Overpass utility script.
+    """Main entry point for the debug geo/S2/Overpass utility script.
 
     Parses command-line arguments and performs requested geo operations:
     - List available debug locations from configuration
-    - Convert coordinates to H3 cells
-    - Get parent H3 cells at different resolution levels
+    - Convert coordinates to S2 cells
+    - Get parent S2 cells at different resolution levels
     - Build and optionally execute Overpass API queries
 
-    The script supports multiple input modes (location name, lat/lng, or H3 cell)
+    The script supports multiple input modes (location name, lat/lng, or S2 cell)
     and can output bounding boxes, Overpass queries, and execute them against the API.
     """
-    parser = argparse.ArgumentParser(description="Debug geo/H3/Overpass utilities")
+    from kishin_trails.config import settings
+    from kishin_trails.overpass import buildQuery
+
+    parser = argparse.ArgumentParser(description="Debug geo/S2/Overpass utilities")
     parser.add_argument("--location", type=str, help="Name of location from DEBUG_LOCATIONS")
     parser.add_argument("--lat", type=float, help="Latitude")
     parser.add_argument("--lng", type=float, help="Longitude")
-    parser.add_argument("--h3-cell", type=str, help="H3 cell ID")
-    parser.add_argument("--resolution", type=int, default=10, help="H3 resolution (default: 10)")
-    parser.add_argument("--level", type=int, default=0, help="H3 parent level for search (default: 0)")
-    parser.add_argument("--radius", type=int, help="Radius in meters (overrides H3 cell radius)")
+    parser.add_argument("--s2-cell", type=str, help="S2 cell ID (decimal or hex)")
+    parser.add_argument("--resolution", type=int, default=16, help="S2 level (default: 16)")
+    parser.add_argument("--parent-level", type=int, default=0, help="S2 parent level for search (default: 0)")
     parser.add_argument("--overpass", action="store_true", help="Output Overpass query")
     parser.add_argument("--execute", action="store_true", help="Execute the Overpass query")
     parser.add_argument("--list-locations", action="store_true", help="List available debug locations")
@@ -49,11 +58,11 @@ def main():
             return
         print("Available locations:")
         for name, loc in locations.items():
-            h3Cell = loc.get("h3_res10") or getH3Cell(loc["lat"], loc["lng"], 10)
-            print(f"  {name}: lat={loc['lat']}, lng={loc['lng']}, h3_res10={h3Cell}")
+            s2Cell = loc.get("s2_res16") or latLngToS2Cell(loc["lat"], loc["lng"], 16)
+            print(f"  {name}: lat={loc['lat']}, lng={loc['lng']}, s2_res16={s2Cell}")
         return
 
-    lat, lng, h3CellRes10, searchCell, radiusM = None, None, None, None, None
+    lat, lng, s2CellRes16, searchCellId = None, None, None, None
 
     if args.location:
         locations = settings.DEBUG_LOCATIONS
@@ -63,51 +72,63 @@ def main():
         loc = locations[args.location]
         lat = loc["lat"]
         lng = loc["lng"]
-        h3CellRes10 = loc.get("h3_res10") or getH3Cell(lat, lng, 10)
-        _, _, radiusM, searchCell = getH3Circle(h3CellRes10, args.level)
+        s2CellRes16 = loc.get("s2_res16") or latLngToS2Cell(lat, lng, 16)
+        if args.parent_level > 0:
+            searchCellId = s2CellToParent(s2CellRes16, getS2CellLevel(s2CellRes16) - args.parent_level)
+        else:
+            searchCellId = s2CellRes16
         print(f"Location: {args.location}")
 
-    elif args.h3_cell:
-        h3CellRes10 = args.h3_cell
-        lat, lng, radiusM, searchCell = getH3Circle(args.h3_cell, args.level)
-        print(f"H3 cell: {args.h3_cell}")
+    elif args.s2_cell is not None:
+        if args.s2_cell.startswith("0x") or any(c in args.s2_cell.lower() for c in "abcdef"):
+            s2CellRes16 = s2CellIdFromHex(args.s2_cell.replace("0x", ""))
+        else:
+            s2CellRes16 = int(args.s2_cell)
+        lat, lng = s2CellIdToLatLng(s2CellRes16)
+        if args.parent_level > 0:
+            searchCellId = s2CellToParent(s2CellRes16, getS2CellLevel(s2CellRes16) - args.parent_level)
+        else:
+            searchCellId = s2CellRes16
+        print(f"S2 cell: {s2CellRes16} / {s2CellIdToHex(s2CellRes16)}")
 
     elif args.lat is not None and args.lng is not None:
         lat = args.lat
         lng = args.lng
-        h3CellRes10 = getH3Cell(lat, lng, args.resolution)
-        _, _, radiusM, searchCell = getH3Circle(h3CellRes10, args.level)
+        s2CellRes16 = latLngToS2Cell(lat, lng, args.resolution)
+        if args.parent_level > 0:
+            searchCellId = s2CellToParent(s2CellRes16, args.resolution - args.parent_level)
+        else:
+            searchCellId = s2CellRes16
 
     else:
         parser.print_help()
         sys.exit(1)
 
-    if args.radius:
-        radiusM = args.radius
-
     print("\n--- Coordinates ---")
     print(f"Lat/Lng: lat={lat}, lng={lng}")
-    print(f"H3 (res 10): {h3CellRes10}")
+    print(f"S2 (res 16): {s2CellRes16} / {s2CellIdToHex(s2CellRes16)}")
 
-    print(f"\n--- Search Cell (level {args.level}) ---")
-    print(f"Cell: {searchCell}")
-    searchLat, searchLng = h3.cell_to_latlng(searchCell)
-    print(f"Center: lat={searchLat}, lng={searchLng}")
-    print(f"Radius: {radiusM} m")
+    print(f"\n--- Search Cell (parent level {args.parent_level}) ---")
+    print(f"Cell: {searchCellId} / {s2CellIdToHex(searchCellId)}")
+    print(f"Level: {getS2CellLevel(searchCellId)}")
+    centerLat, centerLng = getS2CellCenter(searchCellId)
+    print(f"Center: lat={centerLat}, lng={centerLng}")
+    loLat, loLng, hiLat, hiLng = getS2CellBounds(searchCellId)
+    print(f"Bounds: lo=({loLat:.6f}, {loLng:.6f}), hi=({hiLat:.6f}, {hiLng:.6f})")
+    print(f"Edge length: {getS2EdgeLength(searchCellId):.1f} m")
 
     print("\n--- Parent Cells ---")
-    res = h3.get_resolution(h3CellRes10)
-    for level in range(1, res + 1):
-        parent = h3.cell_to_parent(h3CellRes10, res=res - level)
-        parentLat, parentLng = h3.cell_to_latlng(parent)
-        parentRadius = getH3CellRadius(parent)
+    res = getS2CellLevel(searchCellId)
+    for level in range(1, res):
+        parent = s2CellToParent(searchCellId, res - level)
+        parentLat, parentLng = getS2CellCenter(parent)
+        parentEdge = getS2EdgeLength(parent)
         print(
-            f"  Level {level} (res {res - level}): {parent} | lat={parentLat:.5f}, lng={parentLng:.5f} | r={parentRadius}m"
+            f"  Level {res - level} (lvl {level}): {parent} / {s2CellIdToHex(parent)} | lat={parentLat:.5f}, lng={parentLng:.5f} | edge={parentEdge:.1f}m"
         )
 
     if args.overpass:
-        bbox = buildBbox(searchLat, searchLng, radiusM)
-        south, west, north, east = bbox
+        south, west, north, east = loLat, loLng, hiLat, hiLng
         northWest = (north, west)
         northEast = (north, east)
         southWest = (south, west)
@@ -115,12 +136,14 @@ def main():
         print("\n--- Bounding Box ---")
         print(f"NW/SW/NE/SE: {northWest}, {southWest}, {northEast}, {southEast}")
 
+        bbox = (south, west, north, east)
         query = buildQuery(bbox)
         print("\n--- Overpass Query ---")
         print(query)
 
         if args.execute:
             print("\n--- Executing query... ---")
+            from kishin_trails.overpass import OVERPASS_URL
             response = requests.post(
                 OVERPASS_URL,
                 data={
