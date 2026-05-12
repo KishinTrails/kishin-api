@@ -3,8 +3,25 @@
 import math
 
 import s2geometry as s2
+from shapely.geometry import MultiPolygon
 
 EARTH_RADIUS = 6371000
+
+
+def sanitizeValue(val: Any) -> str | None:
+    """Sanitize a value for JSON serialization.
+
+    Args:
+        val: Value to sanitize.
+
+    Returns:
+        String version of the value, or None if the value is NaN/inf.
+    """
+    if isinstance(val, float) and (val != val or val == float("inf") or val == float("-inf")):
+        return None
+    if isinstance(val, str):
+        return val
+    return str(val)
 
 
 def latLngToS2Cell(lat: float, lng: float, level: int = 16) -> int:
@@ -142,3 +159,83 @@ def pointInS2Cell(lat: float, lng: float, cellId: int) -> bool:
     latLo, lngLo, latHi, lngHi = getS2CellBounds(cellId)
     return latLo <= lat <= latHi and lngLo <= lng <= lngHi
 
+
+def s2CellsFromPolygon(geometry, level: int = 10) -> list[int]:
+    """Get all S2 cells at a given level that intersect a shapely polygon.
+
+    Args:
+        geometry: Shapely Polygon or MultiPolygon.
+        level: S2 cell level (0-30). Default is 10.
+
+    Returns:
+        List of S2 cell IDs.
+    """
+    coverer = s2.S2RegionCoverer()
+    coverer.set_min_level(level)
+    coverer.set_max_level(level)
+    coverer.set_max_cells(1000000)
+
+    if isinstance(geometry, MultiPolygon):
+        geometries = geometry.geoms
+    else:
+        geometries = [geometry]
+
+    allCells = []
+    for geom in geometries:
+        coords = list(geom.exterior.coords[:-1])
+        s2Points = [s2.S2LatLng.FromDegrees(lat, lng).ToPoint() for lng, lat in coords]
+
+        loop = s2.S2Loop()
+        loop.Init(s2Points)
+        loop.Normalize()
+
+        s2poly = s2.S2Polygon()
+        s2poly.InitNested([loop])
+
+        covering = coverer.GetCovering(s2poly)
+        allCells.extend(cell.id() for cell in covering)
+
+    return allCells
+
+
+def s2CellIdToToken(cellId: int) -> str:
+    """Get compact hex token for an S2 cell ID.
+
+    Args:
+        cellId: S2 cell ID as integer.
+
+    Returns:
+        Compact hex string (no trailing zeros).
+    """
+    return s2.S2CellId(cellId).ToToken()
+
+
+def s2CellToChildren(cellId: int, level: int) -> list[int]:
+    """Get all child cells at a specific level.
+
+    Args:
+        cellId: Parent S2 cell ID.
+        level: Target level for children (must be > parent cell level).
+
+    Returns:
+        List of child cell IDs.
+
+    Raises:
+        ValueError: If level is not greater than parent cell level.
+    """
+    cellId = s2.S2CellId(cellId)
+    parentLevel = cellId.level()
+
+    if level <= parentLevel:
+        raise ValueError(f"Target level {level} must be greater than parent level {parentLevel}")
+
+    childPrefix = cellId.child_begin(level).id()
+    childEnd = cellId.child_end(level).id()
+
+    children = []
+    childId = s2.S2CellId(childPrefix)
+    while childId.id() < childEnd:
+        children.append(childId.id())
+        childId = childId.next()
+
+    return children
