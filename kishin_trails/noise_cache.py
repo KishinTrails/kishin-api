@@ -1,5 +1,5 @@
 """
-SQLAlchemy-based cache for Perlin noise values.
+SQLAlchemy-based cache for Perlin noise values using S2 cells.
 
 Provides persistent storage for computed Perlin noise values to avoid
 redundant calculations. Uses WAL journal mode and per-process sessions
@@ -86,18 +86,19 @@ def _get_session():
 
 def initCache() -> None:
     """
-	Initialize the noise cache database tables."""
+	Initialize the noise cache database tables.
+	"""
     session = _get_session()
     session.close()
     logger.info("Noise cache tables initialized")
 
 
-def getCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float) -> Optional[float]:
+def getCachedNoise(s2Cell: str, scale: int, octaves: int, amplitudeDecay: float) -> Optional[float]:
     """
-	Retrieve a cached Perlin noise value for a specific H3 cell and parameters.
+    Retrieve a cached Perlin noise value for a specific S2 cell and parameters.
 
     Args:
-        cell: H3 cell identifier.
+        s2Cell: S2 cell hex token.
         scale: Noise scale parameter.
         octaves: Number of noise octaves.
         amplitudeDecay: Amplitude decay factor per octave.
@@ -108,7 +109,7 @@ def getCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float) -
     session = _get_session()
     try:
         result = session.query(NoiseCache).filter(
-            NoiseCache.cell == cell,
+            NoiseCache.s2_cell_id == s2Cell,
             NoiseCache.scale == scale,
             NoiseCache.octaves == octaves,
             NoiseCache.amplitude_decay == amplitudeDecay,
@@ -119,9 +120,9 @@ def getCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float) -
         session.close()
 
 
-def setCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float, value: float) -> None:
+def setCachedNoise(s2Cell: str, scale: int, octaves: int, amplitudeDecay: float, value: float) -> None:
     """
-	Store a Perlin noise value in the cache.
+    Store a Perlin noise value in the cache.
 
     Uses INSERT OR IGNORE so that concurrent workers racing to cache the same
     key don't raise a UNIQUE constraint error. Since noise values are fully
@@ -132,10 +133,10 @@ def setCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float, v
     not atomic and loses the race between those two steps under multiprocessing.
 
     Args:
-        cell: H3 cell identifier.
+        s2Cell: S2 cell hex token.
         scale: Noise scale parameter.
         octaves: Number of noise octaves.
-        amplitudeDecay: Amplitude decay factor per octave.
+        amplitude_decay: Amplitude decay factor per octave.
         value: Computed noise value to cache (range [0, 1]).
     """
     session = _get_session()
@@ -143,11 +144,11 @@ def setCachedNoise(cell: str, scale: int, octaves: int, amplitudeDecay: float, v
         session.execute(
             text(
                 "INSERT OR IGNORE INTO noise_cache "
-                "(cell, scale, octaves, amplitude_decay, noise_value) "
-                "VALUES (:cell, :scale, :octaves, :amplitude_decay, :noise_value)"
+                "(s2_cell_id, scale, octaves, amplitude_decay, noise_value) "
+                "VALUES (:s2_cell_id, :scale, :octaves, :amplitude_decay, :noise_value)"
             ),
             {
-                "cell": cell,
+                "s2_cell_id": s2Cell,
                 "scale": scale,
                 "octaves": octaves,
                 "amplitude_decay": amplitudeDecay,
