@@ -88,15 +88,15 @@ class POIOut(POIBase):
 
 
 class TileOut(BaseModel):
-    """Schema for tile (H3 cell) responses.
+    """Schema for tile (S2 cell) responses.
 
     Attributes:
-        h3_cell: The H3 cell identifier.
+        s2_cell: The S2 cell identifier (hex token).
         tile_type: Type of POI in the tile.
         pois: List of POIs within this tile.
     """
 
-    h3_cell: str
+    s2_cell: str
     tile_type: str | None
     pois: List[POIOut] = []
 
@@ -107,7 +107,7 @@ class ExploredTilesOut(BaseModel):
     """Schema for explored tiles response.
 
     Attributes:
-        explored: List of explored H3 cell identifiers.
+        explored: List of explored S2 cell identifiers (hex tokens).
     """
 
     explored: List[str]

@@ -7,10 +7,8 @@ import os
 
 import requests
 
-from kishin_trails.s2_utils import (
+from kishin_trails.utils import (
     latLngToS2Cell,
-    s2CellIdToHex,
-    s2CellIdFromHex,
     s2CellIdToLatLng,
     getS2CellLevel,
     s2CellToParent,
@@ -80,16 +78,13 @@ def main():
         print(f"Location: {args.location}")
 
     elif args.s2_cell is not None:
-        if args.s2_cell.startswith("0x") or any(c in args.s2_cell.lower() for c in "abcdef"):
-            s2CellRes16 = s2CellIdFromHex(args.s2_cell.replace("0x", ""))
-        else:
-            s2CellRes16 = int(args.s2_cell)
+        s2CellRes16 = args.s2_cell
         lat, lng = s2CellIdToLatLng(s2CellRes16)
         if args.parent_level > 0:
             searchCellId = s2CellToParent(s2CellRes16, getS2CellLevel(s2CellRes16) - args.parent_level)
         else:
             searchCellId = s2CellRes16
-        print(f"S2 cell: {s2CellRes16} / {s2CellIdToHex(s2CellRes16)}")
+        print(f"S2 cell: {s2CellRes16}")
 
     elif args.lat is not None and args.lng is not None:
         lat = args.lat
@@ -106,10 +101,10 @@ def main():
 
     print("\n--- Coordinates ---")
     print(f"Lat/Lng: lat={lat}, lng={lng}")
-    print(f"S2 (res 16): {s2CellRes16} / {s2CellIdToHex(s2CellRes16)}")
+    print(f"S2 (res 16): {s2CellRes16}")
 
     print(f"\n--- Search Cell (parent level {args.parent_level}) ---")
-    print(f"Cell: {searchCellId} / {s2CellIdToHex(searchCellId)}")
+    print(f"Cell: {searchCellId}")
     print(f"Level: {getS2CellLevel(searchCellId)}")
     centerLat, centerLng = getS2CellCenter(searchCellId)
     print(f"Center: lat={centerLat}, lng={centerLng}")
@@ -124,7 +119,7 @@ def main():
         parentLat, parentLng = getS2CellCenter(parent)
         parentEdge = getS2EdgeLength(parent)
         print(
-            f"  Level {res - level} (lvl {level}): {parent} / {s2CellIdToHex(parent)} | lat={parentLat:.5f}, lng={parentLng:.5f} | edge={parentEdge:.1f}m"
+            f"  Level {res - level} (lvl {level}): {parent} | lat={parentLat:.5f}, lng={parentLng:.5f} | edge={parentEdge:.1f}m"
         )
 
     if args.overpass:
