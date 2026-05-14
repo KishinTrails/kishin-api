@@ -1,7 +1,7 @@
 """
-SQLAlchemy models for the Kishin API.
+SQLAlchemy models for the Kishin API using S2 cells.
 
-Defines the database schema for users, tiles (H3 cells), and Points of Interest.
+Defines the database schema for users, tiles (S2 cells), and Points of Interest.
 """
 
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
@@ -29,19 +29,19 @@ class User(Base):
 
 
 class Tile(Base):
-    """Tile model representing an H3 hexagonal cell.
+    """Tile model representing an S2 cell at level 16.
 
-    Stores H3 cell identifiers and their associated POIs.
+    Stores S2 cell identifiers and their associated POIs.
 
     Attributes:
-        h3_cell: Primary key - the H3 cell identifier.
+        s2_cell_id: Primary key - the S2 cell ID as hex token.
         tile_type: Type of POI in this tile (e.g., 'peak', 'natural', 'industrial').
         pois: Related POI records for this tile.
     """
 
     __tablename__ = "tiles"
 
-    h3_cell = Column(String, primary_key=True)
+    s2_cell_id = Column(String, primary_key=True)
     tile_type = Column(String)
     active = Column(Boolean)
     pois = relationship("POI", back_populates="tile", cascade="all, delete-orphan")
@@ -54,13 +54,13 @@ class Tile(Base):
 
 
 class POI(Base):
-    """Point of Interest model for OSM elements within an H3 cell.
+    """Point of Interest model for OSM elements within an S2 cell.
 
     Represents trail-related features like peaks, viewpoints, parks, etc.
 
     Attributes:
         id: Primary key for the POI.
-        h3_cell: Foreign key to the parent H3 tile.
+        s2_cell_id: Foreign key to the parent S2 tile.
         osm_id: OpenStreetMap element ID.
         name: Name of the POI from OSM tags.
         lat: Latitude of the POI.
@@ -72,7 +72,7 @@ class POI(Base):
     __tablename__ = "pois"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    h3_cell = Column(String, ForeignKey("tiles.h3_cell"), nullable=False, index=True)
+    s2_cell_id = Column(String, ForeignKey("tiles.s2_cell_id"), nullable=False, index=True)
     osm_id = Column(Integer, nullable=False)
     name = Column(String)
     lat = Column(Float, nullable=False)
@@ -81,22 +81,33 @@ class POI(Base):
 
     tile = relationship("Tile", back_populates="pois")
 
-    __table_args__ = (UniqueConstraint('h3_cell', 'osm_id', name='uix_h3_osm'),)
+    __table_args__ = (UniqueConstraint('s2_cell_id', 'osm_id', name='uix_s2_osm'),)
 
 
 tile_post_processing_pois = Table(
     "tile_post_processing_pois",
     Base.metadata,
-    Column("tile_h3_cell", String, ForeignKey("tiles.h3_cell"), primary_key=True),
-    Column("post_processing_poi_id", Integer, ForeignKey("post_processing_pois.id"), primary_key=True)
+    Column("tile_s2_cell_id",
+           String,
+           ForeignKey("tiles.s2_cell_id"),
+           primary_key=True),
+    Column("post_processing_poi_id",
+           Integer,
+           ForeignKey("post_processing_pois.id"),
+           primary_key=True)
 )
-
 
 user_explored_tiles = Table(
     "user_explored_tiles",
     Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
-    Column("tile_h3_cell", String, ForeignKey("tiles.h3_cell"), primary_key=True)
+    Column("user_id",
+           Integer,
+           ForeignKey("users.id"),
+           primary_key=True),
+    Column("tile_s2_cell_id",
+           String,
+           ForeignKey("tiles.s2_cell_id"),
+           primary_key=True)
 )
 
 
@@ -120,21 +131,17 @@ class PostProcessingPoI(Base):
     osm_id = Column(Integer, nullable=False, unique=True)
     name = Column(String)
     tile_type = Column(String, nullable=False)
-    tiles = relationship(
-        "Tile",
-        secondary="tile_post_processing_pois",
-        back_populates="post_processing_pois"
-    )
+    tiles = relationship("Tile", secondary="tile_post_processing_pois", back_populates="post_processing_pois")
 
 
 class NoiseCache(Base):
     """Cache model for Perlin noise values.
 
-    Stores computed Perlin noise values for H3 cells to avoid redundant calculations.
+    Stores computed Perlin noise values for S2 cells to avoid redundant calculations.
     Uses composite primary key to ensure one entry per unique parameter combination.
 
     Attributes:
-        cell: H3 cell identifier (primary key component).
+        s2_cell_id: S2 cell ID as hex token (primary key component).
         scale: Noise scale parameter (primary key component).
         octaves: Number of noise octaves (primary key component).
         amplitude_decay: Amplitude decay factor per octave (primary key component).
@@ -143,7 +150,7 @@ class NoiseCache(Base):
 
     __tablename__ = "noise_cache"
 
-    cell = Column(String, primary_key=True)
+    s2_cell_id = Column(String, primary_key=True)
     scale = Column(Integer, primary_key=True)
     octaves = Column(Integer, primary_key=True)
     amplitude_decay = Column(Float, primary_key=True)
