@@ -9,7 +9,7 @@ import gpx
 
 from kishin_trails.database import SESSION_LOCAL
 from kishin_trails.models import Tile, User
-from kishin_trails.utils import getH3Cell
+from kishin_trails.utils import latLngToS2Cell
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,39 +20,43 @@ logging.basicConfig(
 logger = logging.getLogger("import_gpx")
 
 
-def getOrCreateTile(session, h3Cell: str) -> Tile:
+def getOrCreateTile(session, s2Cell: str) -> Tile:
     """Get existing tile from database or create a new one.
 
     Args:
         session: SQLAlchemy database session.
-        h3Cell: H3 cell identifier.
+        s2Cell: S2 cell identifier.
 
     Returns:
         The existing or newly created Tile model instance.
     """
-    tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
+    tile = session.query(Tile).filter(Tile.s2_cell_id == s2Cell).first()
     if not tile:
-        tile = Tile(h3_cell=h3Cell)
+        tile = Tile(s2_cell_id=s2Cell)
         session.add(tile)
         session.flush()
     return tile
 
 
-def importGpx(gpxPath: str, username: str, resolution: int = 10, dryRun: bool = False) -> None:
+def importGpx(gpxPath: str, username: str, level: int = 16, dryRun: bool = False) -> None:
     """Import GPX file and mark tiles as explored by user.
 
-    Reads a GPX file, extracts all track points, converts them to H3 cells
-    at the specified resolution, and marks them as explored for the given user.
+    Reads a GPX file, extracts all track points, converts them to S2 cells
+    at the specified level, and marks them as explored for the given user.
 
     Args:
         gpxPath: Path to the GPX file.
         username: Username to associate explored tiles with.
-        resolution: H3 resolution level (default: 10).
+        level: S2 cell level (0-30, default: 16).
         dryRun: If True, only print tiles without updating the database.
 
     Raises:
         SystemExit: If the specified user is not found in the database.
     """
+    if not 0 <= level <= 30:
+        logger.error("Invalid S2 level: %d (must be 0-30)", level)
+        sys.exit(1)
+
     gpxFile = gpx.read_gpx(gpxPath)
 
     tiles: set[str] = set()
@@ -61,8 +65,8 @@ def importGpx(gpxPath: str, username: str, resolution: int = 10, dryRun: bool = 
             for point in segment.trkpt:
                 lat = float(point.lat)
                 lng = float(point.lon)
-                h3Cell = getH3Cell(lat, lng, resolution)
-                tiles.add(h3Cell)
+                s2Cell = latLngToS2Cell(lat, lng, level)
+                tiles.add(s2Cell)
 
     logger.info("Found %d unique tiles in GPX file", len(tiles))
 
@@ -79,8 +83,8 @@ def importGpx(gpxPath: str, username: str, resolution: int = 10, dryRun: bool = 
             logger.error("User '%s' not found", username)
             sys.exit(1)
 
-        for h3Cell in tiles:
-            tile = getOrCreateTile(session, h3Cell)
+        for s2Cell in tiles:
+            tile = getOrCreateTile(session, s2Cell)
             if tile not in user.explored_tiles:
                 user.explored_tiles.append(tile)
 
@@ -99,7 +103,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Import GPX file and register explored tiles")
     parser.add_argument("gpx_file", help="Path to GPX file")
     parser.add_argument("--user", "-u", required=True, help="Username to associate explored tiles with")
-    parser.add_argument("--resolution", "-r", type=int, default=10, help="H3 resolution (default: 10)")
+    parser.add_argument("--resolution", "-r", type=int, default=16, help="S2 level (0-30, default: 16)")
     parser.add_argument("--dry-run", action="store_true", help="Print tiles without updating database")
 
     args = parser.parse_args()
