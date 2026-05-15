@@ -11,9 +11,9 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, Point
 
 from kishin_trails.cache import getTile, setTile
 from kishin_trails.config import settings
-from kishin_trails.utils import sanitizeValue, pointInH3Hexagon, getH3Circle
+from kishin_trails.utils import sanitizeValue, pointInS2Cell, getS2CellCenter, getS2CellBounds
 from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.overpass import loadElementsAt
+from kishin_trails.overpass import loadElementsAtBounds
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, HTTPException, Query, Depends
@@ -218,12 +218,12 @@ def filterWaypointsForCache(elements: List[dict]) -> Tuple[List[dict], str | Non
     return [], None
 
 
-def formatPoiFromCache(cachedTile: dict, h3Cell: str, lat: float, lng: float) -> dict:
+def formatPoiFromCache(cachedTile: dict, s2Cell: str, lat: float, lng: float) -> dict:
     """Format cached POI data for API response."""
     pois = cachedTile.get("pois", [])
     if not pois:
         return {
-            "h3_cell": h3Cell,
+            "s2_cell_id": s2Cell,
             "type": cachedTile.get("tile_type"),
             "center": {
                 "lat": lat,
@@ -234,7 +234,7 @@ def formatPoiFromCache(cachedTile: dict, h3Cell: str, lat: float, lng: float) ->
 
     poiData = pois[0]
     return {
-        "h3_cell": h3Cell,
+        "s2_cell_id": s2Cell,
         "type": cachedTile.get("tile_type"),
         "center": {
             "lat": lat,
@@ -260,23 +260,23 @@ def formatPoiFromCache(cachedTile: dict, h3Cell: str, lat: float, lng: float) ->
     }
 
 
-def getPoiDataForCell(h3Cell: str) -> dict | None:
-    """Get POI data for a single H3 cell.
+def getPoiDataForCell(s2Cell: str) -> dict | None:
+    """Get POI data for a single S2 cell.
 
     Args:
-        h3Cell: H3 cell identifier.
+        s2Cell: S2 cell identifier.
 
     Returns:
         Dictionary with POI data, or None if the cell is invalid.
     """
     try:
-        lat, lng, radiusM, _ = getH3Circle(h3Cell, 0)
+        lat, lng = getS2CellCenter(s2Cell)
     except ValueError:
         return None
 
-    cached = getTile(h3Cell)
+    cached = getTile(s2Cell)
     if cached:
-        return formatPoiFromCache(cached, h3Cell, lat, lng)
+        return formatPoiFromCache(cached, s2Cell, lat, lng)
 
     # ============================================================================================
     # This is temporary.
@@ -287,13 +287,15 @@ def getPoiDataForCell(h3Cell: str) -> dict | None:
             "tile_type": None,
             "pois": [],
         },
-        h3Cell,
+        s2Cell,
         lat,
         lng,
     )
     # ============================================================================================
 
-    gdf = loadElementsAt(lat, lng, radiusM)
+    bounds = getS2CellBounds(s2Cell)
+
+    gdf = loadElementsAtBounds(bounds)
 
     elements = []
     for _, row in gdf.iterrows():
@@ -301,7 +303,7 @@ def getPoiDataForCell(h3Cell: str) -> dict | None:
         geometry = tags.get("geometry")
         if geometry is None:
             assert False, "Geometry not present in element!"
-        elif isinstance(geometry, Point) and not pointInH3Hexagon(geometry.y, geometry.x, h3Cell):
+        elif isinstance(geometry, Point) and not pointInS2Cell(s2Cell, geometry.y, geometry.x):
             continue
         elif isinstance(geometry, (LineString, MultiPolygon, Polygon)):
             continue
@@ -313,37 +315,37 @@ def getPoiDataForCell(h3Cell: str) -> dict | None:
 
     waypoints, tileType = filterWaypointsForCache(elements)
 
-    setTile(h3Cell, tileType, waypoints)
-    cached = getTile(h3Cell)
-    return formatPoiFromCache(cached, h3Cell, lat, lng)
+    setTile(s2Cell, tileType, waypoints)
+    cached = getTile(s2Cell)
+    return formatPoiFromCache(cached, s2Cell, lat, lng)
 
 
 if router:
 
     @router.get(
         "/bycell",
-        summary="Get POI for a single H3 cell",
+        summary="Get POI for a single S2 cell",
         response_class=JSONResponse,
     )
-    def getPoiByCell(h3Cell: str = Query(
+    def getPoiByCell(s2Cell: str = Query(
         ...,
-        description="H3 hexagonal cell identifier (e.g., '851f9633fffffff').",
+        description="S2 cell identifier (e.g., '89c25a221').",
     )):
-        """Get POI data for a specific H3 cell.
+        """Get POI data for a specific S2 cell.
 
         Args:
-            h3Cell: H3 cell identifier.
+            s2Cell: S2 cell identifier.
 
         Returns:
             JSON response with POI data for the cell.
 
         Raises:
-            HTTPException 400: If the H3 cell is invalid.
+            HTTPException 400: If the S2 cell is invalid.
             HTTPException 404: If no POI data found for this cell.
         """
-        data = getPoiDataForCell(h3Cell)
+        data = getPoiDataForCell(s2Cell)
         if data is None:
-            raise HTTPException(status_code=400, detail="Invalid H3 cell")
+            raise HTTPException(status_code=400, detail="Invalid S2 cell")
 
         if data.get("type") is None:
             raise HTTPException(
@@ -355,17 +357,17 @@ if router:
 
     @router.get(
         "/bycells",
-        summary="Get POI for multiple H3 cells",
+        summary="Get POI for multiple S2 cells",
         response_class=JSONResponse,
     )
-    def getPoiByCells(h3Cells: List[str] = Query(
+    def getPoiByCells(s2Cells: List[str] = Query(
         ...,
-        description="List of H3 hexagonal cell identifiers.",
+        description="List of S2 cell identifiers.",
     )):
-        """Get POI data for multiple H3 cells in a single request.
+        """Get POI data for multiple S2 cells in a single request.
 
         Args:
-            h3Cells: List of H3 cell identifiers.
+            s2Cells: List of S2 cell identifiers.
 
         Returns:
             JSON response with POI data for cells that have POI information.
@@ -374,12 +376,12 @@ if router:
             HTTPException 400: If no cells provided.
             HTTPException 404: If no POI data found for any of the provided cells.
         """
-        if not h3Cells:
+        if not s2Cells:
             raise HTTPException(status_code=400, detail="No cells provided")
 
         results = []
-        for h3Cell in h3Cells:
-            data = getPoiDataForCell(h3Cell)
+        for s2Cell in s2Cells:
+            data = getPoiDataForCell(s2Cell)
             if data is not None and data.get("type") is not None:
                 results.append(data)
 

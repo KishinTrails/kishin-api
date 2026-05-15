@@ -286,7 +286,7 @@ def getAllPostProcessingPois() -> List[Dict[str, Any]]:
         session.close()
 
 
-def getTilesForPostProcessingPoi(poiId: int) -> List[int]:
+def getTilesForPostProcessingPoi(poiId: int) -> List[str]:
     """Get all tile S2 cell IDs linked to a PostProcessingPoI.
 
     Args:
