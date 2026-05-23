@@ -131,8 +131,8 @@ def cache_with_data():
     """
     from kishin_trails.cache import setTile
 
-    def _set_tile(h3_cell: str, tile_type: str | None, pois: list):
-        setTile(h3_cell, tile_type, pois)
+    def _set_tile(s2_cell: str, tile_type: str | None, pois: list):
+        setTile(s2_cell, tile_type, pois)
 
     return _set_tile
 
@@ -147,7 +147,7 @@ def mock_cell_activity(mocker):
 
     Usage:
         def test_something(mock_cell_activity):
-            mock_cell_activity(inactive_cells=["8XXXXXXXXXXffff"])
+            mock_cell_activity(inactive_cells=["4XXXXXXXX"])
             # Now this specific cell will be inactive (returns False)
             # All other cells remain active (return True)
 
@@ -169,7 +169,7 @@ def mock_cell_activity(mocker):
         Configure which cells should be inactive.
 
         Args:
-            inactive_cells: List of H3 cell IDs that should return False (inactive).
+            inactive_cells: List of S2 cell IDs that should return False (inactive).
                            All other cells will return True (active).
                            If None or empty list, all cells are active.
         """
