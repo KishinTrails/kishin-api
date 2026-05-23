@@ -20,6 +20,11 @@ poetry run pytest -v
 poetry run pytest --cov=kishin_trails -v
 ```
 
+**Run type checker:**
+```bash
+poetry run ty check
+```
+
 **Development server:**
 ```bash
 poetry run python -m kishin_trails.main
@@ -100,6 +105,7 @@ poetry shell
 - Convert to "EPSG:3857" for distance calculations
 - Validate CRS compatibility before spatial operations
 - Handle None/NaN geometries explicitly
+- S2 cells are always handled as hexadecimal token strings (e.g., "89c25a221"), never as raw uint64 IDs
 
 ### Git & Version Control
 - Commit messages: concise, imperative mood ("Add user auth", "Fix bbox calculation")

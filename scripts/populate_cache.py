@@ -1,7 +1,7 @@
 """
-Script to populate the cache with POI data for H3 tiles.
+Script to populate the cache with POI data for S2 tiles.
 
-Takes one or more H3 tile IDs as argument, uncompacts them to level 10 tiles,
+Takes one or more S2 tile IDs as argument, expands them to level 10 tiles,
 deduplicates the children, and populates the cache with POI data for each tile.
 """
 
@@ -10,7 +10,6 @@ import logging
 import sys
 import time
 
-import h3
 import requests
 from shapely.geometry import MultiPolygon, Polygon, Point
 from sqlalchemy import text
@@ -19,9 +18,18 @@ from tqdm import tqdm
 from kishin_trails.cache import setTile, getTile, getAllPostProcessingPois, getTilesForPostProcessingPoi
 from kishin_trails.database import SESSION_LOCAL
 from kishin_trails.models import PostProcessingPoI, Tile
-from kishin_trails.overpass import loadElementsAt
+from kishin_trails.overpass import loadElementsAtBounds
 from kishin_trails.poi import filterWaypointsForCache
-from kishin_trails.utils import getH3Circle, pointInH3Hexagon, getH3Cell
+from kishin_trails.utils import (
+    latLngToS2Cell,
+    pointInS2Cell,
+    s2CellToChildren,
+    s2CellToParent,
+    getS2CellCenter,
+    getS2CellBounds,
+    getS2CellLevel,
+    s2CellsFromPolygon,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +42,7 @@ def insertOrGetPostProcessingPoi(osmId: int, name: str | None, tileType: str):
     """Insert or get existing PostProcessingPoI. Returns the ID.
     
     This is used for polygon features (forests, parks, industrial zones) that span
-    multiple H3 tiles. The POI is stored separately and linked to tiles via a junction
+    multiple S2 tiles. The POI is stored separately and linked to tiles via a junction
     table, allowing a second pass to fill interior tiles with the correct tile_type.
     """
     session = SESSION_LOCAL()
@@ -53,10 +61,10 @@ def insertOrGetPostProcessingPoi(osmId: int, name: str | None, tileType: str):
         session.close()
 
 
-def insertJunctionEntry(tileH3Cell: str, poiId: int) -> None:
+def insertJunctionEntry(tileS2Cell: str, poiId: int) -> None:
     """Insert into junction table (INSERT OR IGNORE).
     
-    Creates a many-to-many relationship between polygon POIs and H3 tiles.
+    Creates a many-to-many relationship between polygon POIs and S2 tiles.
     This allows tracking which tiles are covered by a polygon feature, so
     interior tiles can be filled in the second pass (fillPolygonInteriors).
     """
@@ -65,10 +73,10 @@ def insertJunctionEntry(tileH3Cell: str, poiId: int) -> None:
         # INSERT OR IGNORE prevents duplicates if the same polygon covers a tile multiple times
         session.execute(
             text(
-                "INSERT OR IGNORE INTO tile_post_processing_pois (tile_h3_cell, post_processing_poi_id) VALUES (:tile, :poiId)"
+                "INSERT OR IGNORE INTO tile_post_processing_pois (tile_s2_cell_id, post_processing_poi_id) VALUES (:tile, :poiId)"
             ),
             {
-                "tile": tileH3Cell,
+                "tile": tileS2Cell,
                 "poiId": poiId
             }
         )
@@ -77,7 +85,7 @@ def insertJunctionEntry(tileH3Cell: str, poiId: int) -> None:
         session.close()
 
 
-def setTileType(h3Cell: str, tileType: str) -> None:
+def setTileType(s2Cell: str, tileType: str) -> None:
     """Update tile_type for a tile.
     
     Used in the second pass (fillPolygonInteriors) to set the tile_type for
@@ -86,7 +94,7 @@ def setTileType(h3Cell: str, tileType: str) -> None:
     """
     session = SESSION_LOCAL()
     try:
-        tile = session.query(Tile).filter(Tile.h3_cell == h3Cell).first()
+        tile = session.query(Tile).filter(Tile.s2_cell_id == s2Cell).first()
         if tile:
             tile.tile_type = tileType
             session.commit()
@@ -117,29 +125,29 @@ def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
         session.close()
 
 
-def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> None:
-    """Populate cache for multiple H3 tiles with unified progress tracking.
+def populateCacheForTilesOld(s2Cells: list[str], skipCached: bool = True) -> None:
+    """Populate cache for multiple S2 tiles with unified progress tracking.
 
     Args:
-        h3Cells: List of parent H3 cell IDs.
+        s2Cells: List of parent S2 cell IDs.
         skipCached: If True, skip tiles that already exist in database.
                     If False, re-process all tiles (for --no-cache mode).
     """
-    # Expand all parent tiles to level 10 children for consistent granularity
-    # Level 10 provides a good balance between detail and performance
+    # Expand all parent tiles to level 16 children for consistent granularity
+    # Level 16 provides a good balance between detail and performance
     allChildren: list[str] = []
-    for parentCell in h3Cells:
-        res = h3.get_resolution(parentCell)
-        if res > 10:
-            logger.error("H3 cell resolution must be >= 10, got %d for %s", res, parentCell)
+    for parentCell in s2Cells:
+        res = getS2CellLevel(parentCell)
+        if res > 16:
+            logger.error("S2 cell level must be >= 16, got %d for %s", res, parentCell)
             continue
 
-        # Uncompact lower-resolution tiles to level 10 children
-        if res < 10:
-            children = h3.cell_to_children(parentCell, res=10)
+        # Uncompact lower-resolution tiles to level 16 children
+        if res < 16:
+            children = s2CellToChildren(parentCell, 16)
             allChildren.extend(children)
         else:
-            # Already at level 10, use as-is
+            # Already at level 16, use as-is
             allChildren.append(parentCell)
 
     # Remove duplicates that occur when parent tiles overlap or share children
@@ -147,7 +155,7 @@ def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> Non
     uniqueChildren = list(dict.fromkeys(allChildren))
     deduplicatedCount = initialCount - len(uniqueChildren)
 
-    logger.info("Collected %d level-10 tiles from %d parent tile(s)", len(uniqueChildren), len(h3Cells))
+    logger.info("Collected %d level-16 tiles from %d parent tile(s)", len(uniqueChildren), len(s2Cells))
     if deduplicatedCount > 0:
         logger.info("Removed %d duplicate tile(s)", deduplicatedCount)
 
@@ -158,9 +166,9 @@ def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> Non
             logger.debug("Tile %s already cached, skipping", childCell)
             continue
 
-        # Get center and radius for the child cell to define search area
+        # Get bounds for the child cell to define search area
         try:
-            lat, lng, radiusM, _ = getH3Circle(childCell, 0)
+            bounds = getS2CellBounds(childCell)
         except ValueError as e:
             logger.warning("Skipping tile %s: %s", childCell, e)
             continue
@@ -170,7 +178,7 @@ def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> Non
         retryDelay = 5
         while True:
             try:
-                gdf = loadElementsAt(lat, lng, radiusM)
+                gdf = loadElementsAtBounds(bounds)
                 break
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code in (429, 504):
@@ -195,8 +203,8 @@ def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> Non
             geometry = tags.get("geometry")
             if geometry is None:
                 assert False, "Geometry not present in element!"
-            elif isinstance(geometry, Point) and not pointInH3Hexagon(geometry.y, geometry.x, childCell):
-                # Skip points that fall outside this H3 hexagon (may be in adjacent tile)
+            elif isinstance(geometry, Point) and not pointInS2Cell(childCell, geometry.y, geometry.x):
+                # Skip points that fall outside this S2 cell (may be in adjacent tile)
                 continue
             elif isinstance(geometry, (MultiPolygon, Polygon)):
                 # Handle polygon features (forests, parks, industrial zones) that span multiple tiles
@@ -210,24 +218,18 @@ def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> Non
                     tileType = 'natural'
 
                 if tileType:
-                    # Convert polygon to H3 cells at resolution 10
+                    # Convert polygon to S2 cells at level 16
                     allCells = []
                     if isinstance(geometry, Polygon):
-                        # Extract exterior coordinates (note: shapely uses (lng, lat), h3 expects (lat, lng))
-                        coords = list(geometry.exterior.coords)
-                        h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                        allCells = h3.polygon_to_cells(h3Polygon, res=10)
+                        allCells = s2CellsFromPolygon(geometry, 16)
                     elif isinstance(geometry, MultiPolygon):
-                        # Handle multi-part polygons (e.g., forest with multiple disconnected areas)
                         for poly in geometry.geoms:
-                            coords = list(poly.exterior.coords)
-                            h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                            allCells.extend(h3.polygon_to_cells(h3Polygon, res=10))
+                            allCells.extend(s2CellsFromPolygon(poly, 16))
 
                     # Store POI for post-processing (second pass will fill interior tiles)
-                    poiId = insertOrGetPostProcessingPoi(int(row['id']), tags.get('name'), tileType)
+                    poiId = insertOrGetPostProcessingPoi(row['id'], tags.get('name'), tileType)
 
-                    # Link this POI to all H3 cells it covers
+                    # Link this POI to all S2 cells it covers
                     for cell in allCells:
                         insertJunctionEntry(cell, poiId)
 
@@ -246,58 +248,58 @@ def populateCacheForTilesOld(h3Cells: list[str], skipCached: bool = True) -> Non
     logger.info("Finished populating cache for %d tile(s)", len(uniqueChildren))
 
 
-def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryResolution: int = 5) -> None:
+def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryResolution: int = 9) -> None:
     """Populate cache using efficient single-query-per-parent approach.
 
-    Instead of querying Overpass for each level-10 tile individually, this function:
+    Instead of querying Overpass for each level-16 tile individually, this function:
     1. Groups input tiles by their level-5 (or configurable) parent
     2. Makes ONE Overpass query per parent tile
-    3. Distributes elements to their correct level-10 tiles based on geometry
-    4. Caches each level-10 tile separately
+    3. Distributes elements to their correct level-16 tiles based on geometry
+    4. Caches each level-16 tile separately
 
     This reduces network calls by ~100x for large areas.
 
     Args:
-        h3Cells: List of parent H3 cell IDs (resolution <= 10).
+        s2Cells: List of parent S2 cell IDs (level <= 16).
         skipCached: If True, skip tiles that already exist in database.
-        queryResolution: H3 resolution for grouping queries (default 5).
+        queryResolution: S2 cell level for grouping queries (default 5).
                         Lower = fewer queries but larger result sets.
     """
-    if queryResolution > 10:
-        logger.error("Query resolution must be <= 10, got %d", queryResolution)
+    if queryResolution > 16:
+        logger.error("Query resolution must be <= 16, got %d", queryResolution)
         return
 
-    allLevel10Children: list[str] = []
-    for parentCell in h3Cells:
-        res = h3.get_resolution(parentCell)
-        if res > 10:
-            logger.error("H3 cell resolution must be <= 10, got %d for %s", res, parentCell)
+    allLevel16Children: list[str] = []
+    for parentCell in s2Cells:
+        res = getS2CellLevel(parentCell)
+        if res > 16:
+            logger.error("S2 cell level must be <= 16, got %d for %s", res, parentCell)
             continue
 
-        if res < 10:
-            children = h3.cell_to_children(parentCell, res=10)
-            allLevel10Children.extend(children)
+        if res < 16:
+            children = s2CellToChildren(parentCell, 16)
+            allLevel16Children.extend(children)
         else:
-            allLevel10Children.append(parentCell)
+            allLevel16Children.append(parentCell)
 
-    initialCount = len(allLevel10Children)
-    uniqueLevel10Children = list(dict.fromkeys(allLevel10Children))
-    deduplicatedCount = initialCount - len(uniqueLevel10Children)
+    initialCount = len(allLevel16Children)
+    uniqueLevel16Children = list(dict.fromkeys(allLevel16Children))
+    deduplicatedCount = initialCount - len(uniqueLevel16Children)
 
-    logger.info("Collected %d level-10 tiles from %d parent tile(s)", len(uniqueLevel10Children), len(h3Cells))
+    logger.info("Collected %d level-16 tiles from %d parent tile(s)", len(uniqueLevel16Children), len(s2Cells))
     if deduplicatedCount > 0:
-        logger.info("Removed %d duplicate level-10 tile(s)", deduplicatedCount)
+        logger.info("Removed %d duplicate level-16 tile(s)", deduplicatedCount)
 
     parentTiles: set[str] = set()
-    for childCell in uniqueLevel10Children:
-        res = h3.get_resolution(childCell)
+    for childCell in uniqueLevel16Children:
+        res = getS2CellLevel(childCell)
         if res > queryResolution:
-            parent = h3.cell_to_parent(childCell, res=queryResolution)
+            parent = s2CellToParent(childCell, queryResolution)
             parentTiles.add(parent)
         else:
             parentTiles.add(childCell)
 
-    logger.info("Grouped into %d parent tile(s) at resolution %d for querying", len(parentTiles), queryResolution)
+    logger.info("Grouped into %d parent tile(s) at level %d for querying", len(parentTiles), queryResolution)
 
     elementsByTile: dict[str,
                          list[dict]] = {}
@@ -306,7 +308,7 @@ def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryReso
     logger.info("Querying Overpass API for %d parent tile(s)...", len(parentTiles))
     for parentTile in parentTiles:
         try:
-            lat, lng, radiusM, _ = getH3Circle(parentTile, 0)
+            bounds = getS2CellBounds(parentTile)
         except ValueError as e:
             logger.warning("Skipping parent tile %s: %s", parentTile, e)
             continue
@@ -315,7 +317,7 @@ def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryReso
         gdf = None
         while True:
             try:
-                gdf = loadElementsAt(lat, lng, radiusM)
+                gdf = loadElementsAtBounds(bounds)
                 break
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code in (429, 504):
@@ -341,15 +343,15 @@ def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryReso
 
             if isinstance(geometry, Point):
                 pointLat, pointLng = geometry.y, geometry.x
-                level10Cell = getH3Cell(pointLat, pointLng, 10)
+                level16Cell = latLngToS2Cell(pointLat, pointLng, 16)
 
-                if level10Cell not in uniqueLevel10Children:
+                if level16Cell not in uniqueLevel16Children:
                     continue
 
-                if level10Cell not in elementsByTile:
-                    elementsByTile[level10Cell] = []
+                if level16Cell not in elementsByTile:
+                    elementsByTile[level16Cell] = []
 
-                elementsByTile[level10Cell].append({
+                elementsByTile[level16Cell].append({
                     "id": row["id"],
                     "tags": dict(row.items())
                 })
@@ -364,21 +366,17 @@ def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryReso
                     tileType = 'natural'
 
                 if tileType:
-                    polygonProcessing.append((int(row['id']), tags.get('name'), tileType, geometry))
+                    polygonProcessing.append((row['id'], tags.get('name'), tileType, geometry))
 
                     allCells = []
                     if isinstance(geometry, Polygon):
-                        coords = list(geometry.exterior.coords)
-                        h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                        allCells = h3.polygon_to_cells(h3Polygon, res=10)
+                        allCells = s2CellsFromPolygon(geometry, 16)
                     elif isinstance(geometry, MultiPolygon):
                         for poly in geometry.geoms:
-                            coords = list(poly.exterior.coords)
-                            h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                            allCells.extend(h3.polygon_to_cells(h3Polygon, res=10))
+                            allCells.extend(s2CellsFromPolygon(poly, 16))
 
                     for cell in allCells:
-                        if cell in uniqueLevel10Children:
+                        if cell in uniqueLevel16Children:
                             if cell not in elementsByTile:
                                 elementsByTile[cell] = []
                             elementsByTile[cell].append({
@@ -392,31 +390,27 @@ def populateCacheForTiles(h3Cells: list[str], skipCached: bool = True, queryReso
 
         allCells = []
         if isinstance(geometry, Polygon):
-            coords = list(geometry.exterior.coords)
-            h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-            allCells = h3.polygon_to_cells(h3Polygon, res=10)
+            allCells = s2CellsFromPolygon(geometry, 16)
         elif isinstance(geometry, MultiPolygon):
             for poly in geometry.geoms:
-                coords = list(poly.exterior.coords)
-                h3Polygon = h3.LatLngPoly([(lat, lng) for lng, lat in coords])
-                allCells.extend(h3.polygon_to_cells(h3Polygon, res=10))
+                allCells.extend(s2CellsFromPolygon(poly, 16))
 
         for cell in allCells:
-            if cell in uniqueLevel10Children:
+            if cell in uniqueLevel16Children:
                 insertJunctionEntry(cell, poiId)
 
     totalTilesProcessed = 0
     totalTilesSkipped = 0
 
-    logger.info("Caching %d level-10 tile(s)...", len(uniqueLevel10Children))
-    for level10Cell in tqdm(uniqueLevel10Children, desc="Caching tiles"):
-        if skipCached and getTile(level10Cell):
+    logger.info("Caching %d level-16 tile(s)...", len(uniqueLevel16Children))
+    for level16Cell in tqdm(uniqueLevel16Children, desc="Caching tiles"):
+        if skipCached and getTile(level16Cell):
             totalTilesSkipped += 1
             continue
 
-        elements = elementsByTile.get(level10Cell, [])
+        elements = elementsByTile.get(level16Cell, [])
         waypoints, tileType = filterWaypointsForCache(elements)
-        setTile(level10Cell, tileType, waypoints)
+        setTile(level16Cell, tileType, waypoints)
         totalTilesProcessed += 1
 
     logger.info("Finished: processed %d tiles, skipped %d tiles", totalTilesProcessed, totalTilesSkipped)
@@ -427,9 +421,9 @@ def fillPolygonInteriors() -> None:
     
     Second pass of the cache population process. After initial tile processing,
     polygon features (forests, parks, industrial zones) are stored in a separate
-    table with links to all H3 cells they cover. This function:
+    table with links to all S2 cells they cover. This function:
     1. Retrieves all stored polygon POIs
-    2. For each polygon, gets all linked H3 tiles
+    2. For each polygon, gets all linked S2 tiles
     3. Sets the tile_type for tiles that don't have one yet (interior tiles)
     4. Cleans up the temporary polygon data and junction entries
     
@@ -443,18 +437,18 @@ def fillPolygonInteriors() -> None:
     logger.info("Found %d polygons to process", len(pois))
 
     for poi in tqdm(pois, desc="Post-processing PoIs"):
-        # Get all H3 tiles linked to this polygon via junction table
+        # Get all S2 tiles linked to this polygon via junction table
         tiles = getTilesForPostProcessingPoi(poi['id'])
         logger.debug("Processing polygon %d with %d linked tiles", poi['id'], len(tiles))
 
         # Set tile_type for all tiles covered by this polygon
-        for tileH3Cell in tiles:
-            tile = getTile(tileH3Cell)
+        for tileS2Cell in tiles:
+            tile = getTile(tileS2Cell)
             # Only update tiles that exist and don't have a type yet
             # This preserves point-based POIs (peaks) that take priority
             if tile and tile.get('tile_type') is None:
-                setTileType(tileH3Cell, poi['tile_type'])
-                logger.debug("Set tile %s to type %s", tileH3Cell, poi['tile_type'])
+                setTileType(tileS2Cell, poi['tile_type'])
+                logger.debug("Set tile %s to type %s", tileS2Cell, poi['tile_type'])
 
         # Remove temporary polygon data - no longer needed after filling interiors
         deletePostProcessingPoiAndJunctions(poi['id'])
@@ -463,30 +457,31 @@ def fillPolygonInteriors() -> None:
     logger.info("Finished polygon interior filling")
 
 
-def parseH3Cells(h3CellsStr: str) -> list[str]:
-    """Parse comma-separated H3 cell IDs into a list.
+def parseS2Cells(s2CellsStr: str) -> list[str]:
+    """Parse comma-separated S2 cell IDs into a list.
 
     Args:
-        h3CellsStr: Comma-separated string of H3 cell IDs.
+        s2CellsStr: Comma-separated string of S2 cell IDs.
 
     Returns:
-        List of validated H3 cell IDs.
+        List of validated S2 cell IDs.
 
     Raises:
-        ValueError: If any cell ID is invalid or has resolution > 10.
+        ValueError: If any cell ID is invalid or has level > 16.
     """
-    cells = [cell.strip() for cell in h3CellsStr.split(",")]
+    cells = [cell.strip() for cell in s2CellsStr.split(",")]
     cells = [cell for cell in cells if cell]
 
     if not cells:
-        raise ValueError("No H3 cell IDs provided")
+        raise ValueError("No S2 cell IDs provided")
 
     for cell in cells:
-        if not h3.is_valid_cell(cell):
-            raise ValueError(f"Invalid H3 cell: {cell}")
-        res = h3.get_resolution(cell)
-        if res > 10:
-            raise ValueError(f"H3 cell resolution must be <= 10, got {res} for cell {cell}")
+        try:
+            res = getS2CellLevel(cell)
+        except ValueError:
+            raise ValueError(f"Invalid S2 cell: {cell}")
+        if res > 16:
+            raise ValueError(f"S2 cell level must be <= 16, got {res} for cell {cell}")
 
     return cells
 
@@ -494,24 +489,24 @@ def parseH3Cells(h3CellsStr: str) -> list[str]:
 def main() -> None:
     """Main entry point for the cache population script.
 
-    Populates the cache with POI data for H3 tiles by:
-    1. Uncompacting H3 tiles to level 10
+    Populates the cache with POI data for S2 tiles by:
+    1. Uncompacting S2 tiles to level 16
     2. Querying the Overpass API for each tile
     3. Filtering and caching POI data
     4. Optionally filling polygon interiors (second pass)
 
-    Supports multiple H3 tiles via comma-separated input. All provided
+    Supports multiple S2 tiles via comma-separated input. All provided
     tiles are processed with the same flags applied.
 
     Two-pass approach:
     - First pass (populateCacheForTiles): Processes tiles, stores polygon features
     - Second pass (fillPolygonInteriors): Fills interior tiles of polygons
     """
-    parser = argparse.ArgumentParser(description="Populate cache with POI data for H3 tiles")
+    parser = argparse.ArgumentParser(description="Populate cache with POI data for S2 tiles")
     parser.add_argument(
-        "h3_cells",
+        "s2_cells",
         nargs="?",
-        help="Comma-separated H3 cell IDs (resolution <= 10), e.g., 'tile1,tile2,tile3'"
+        help="Comma-separated S2 cell IDs (level <= 16), e.g., 'tile1,tile2,tile3'"
     )
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without actually caching")
     parser.add_argument(
@@ -533,36 +528,36 @@ def main() -> None:
         fillPolygonInteriors()
         return
 
-    h3CellsStr = args.h3_cells
+    s2CellsStr = args.s2_cells
 
-    if not h3CellsStr:
-        logger.error("h3_cells argument is required (unless using --fill-only)")
+    if not s2CellsStr:
+        logger.error("s2_cells argument is required (unless using --fill-only)")
         sys.exit(1)
 
     try:
-        h3Cells = parseH3Cells(h3CellsStr)
+        s2Cells = parseS2Cells(s2CellsStr)
     except ValueError as e:
         logger.error(str(e))
         sys.exit(1)
 
-    logger.info("Starting cache population for %d H3 cell(s)", len(h3Cells))
+    logger.info("Starting cache population for %d S2 cell(s)", len(s2Cells))
 
     if args.dry_run:
         # Simulate processing to show how many tiles would be affected
         allChildren: list[str] = []
-        for parentCell in h3Cells:
-            res = h3.get_resolution(parentCell)
-            if res < 10:
-                children = h3.cell_to_children(parentCell, res=10)
+        for parentCell in s2Cells:
+            res = getS2CellLevel(parentCell)
+            if res < 16:
+                children = s2CellToChildren(parentCell, 16)
                 allChildren.extend(children)
             else:
                 allChildren.append(parentCell)
         uniqueChildren = list(dict.fromkeys(allChildren))
-        logger.info("Dry run: would process %d level-10 tiles", len(uniqueChildren))
+        logger.info("Dry run: would process %d level-16 tiles", len(uniqueChildren))
     else:
         skipCached = not args.no_cache
-        populateCacheForTiles(h3Cells, skipCached=skipCached, queryResolution=5)
-        logger.info("Successfully processed %d H3 parent tile(s)", len(h3Cells))
+        populateCacheForTiles(s2Cells, skipCached=skipCached, queryResolution=5)
+        logger.info("Successfully processed %d S2 parent tile(s)", len(s2Cells))
 
     # Second pass: fill interior tiles of polygon features
     if args.fill_polygons:

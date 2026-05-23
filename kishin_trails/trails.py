@@ -1,7 +1,7 @@
 """
 Trails module for user exploration tracking.
 
-Provides API endpoints for managing and retrieving user-explored H3 tiles,
+Provides API endpoints for managing and retrieving user-explored S2 cells,
 allowing users to track their exploration progress across the map.
 """
 
@@ -42,9 +42,9 @@ if router:
         _dbSession: Session = Depends(getDb),
     ):
         """
-        Retrieve all H3 cells marked as explored by the authenticated user.
+        Retrieve all S2 cells marked as explored by the authenticated user.
 
-        This endpoint returns the complete list of H3 hexagonal cell identifiers
+        This endpoint returns the complete list of S2 cell identifiers
         that the user has explored, typically populated via GPX track imports.
 
         Args:
@@ -52,9 +52,9 @@ if router:
             _dbSession: Database session for querying.
 
         Returns:
-            Dictionary containing a list of explored H3 cell identifiers.
+            Dictionary containing a list of explored S2 cell identifiers.
         """
-        explored = [tile.h3_cell for tile in currentUser.explored_tiles]
+        explored = [tile.s2_cell_id for tile in currentUser.explored_tiles]
         return {
             "explored": explored
         }
@@ -68,5 +68,17 @@ if router:
         _dbSession: Session = Depends(getDb),
         cell: str | None = None,
     ):
+        """
+        Log an explored tiles request.
+
+        Records the request for monitoring and debugging purposes.
+
+        Args:
+            currentUser: The authenticated user from JWT token.
+            _dbSession: Database session (unused, required by FastAPI).
+            cell: Optional S2 cell ID included in the request.
+
+        Returns:
+            None.
+        """
         logger.info("POST /trails/explored — user: %s, cell: %s", currentUser.username, cell)
-        return None

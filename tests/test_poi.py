@@ -523,23 +523,23 @@ class TestSelectBestPoi:
 class TestGetPoiByCell:
     """E2E tests for the /poi/bycell endpoint."""
     @pytest.mark.asyncio
-    async def test_bycell_returns_400_for_invalid_h3_cell(self, authenticated_client) -> None:
-        """GET /poi/bycell should return 400 for invalid H3 cell."""
-        response = await authenticated_client.get("/poi/bycell?h3Cell=invalid")
+    async def test_bycell_returns_400_for_invalid_s2_cell(self, authenticated_client) -> None:
+        """GET /poi/bycell should return 400 for invalid S2 cell."""
+        response = await authenticated_client.get("/poi/bycell?s2Cell=invalid")
         assert response.status_code == 400
-        assert "Invalid H3 cell" in response.json()["detail"]
+        assert "Invalid S2 cell" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_bycell_returns_404_for_uncached_cell(self, authenticated_client) -> None:
         """GET /poi/bycell should return 404 for valid but uncached cell."""
-        response = await authenticated_client.get("/poi/bycell?h3Cell=89195da4bbbffff")
+        response = await authenticated_client.get("/poi/bycell?s2Cell=48760549c")
         assert response.status_code == 404
         assert "POI data not found" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_bycell_returns_200_for_cached_cell_with_poi(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return 200 for cached cell with POI data."""
-        cache_with_data("89195da4bbbffff",
+        cache_with_data("48760549c",
                         "peak",
                         [{
                             "osm_id": 1,
@@ -547,7 +547,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get("/poi/bycell?h3Cell=89195da4bbbffff")
+        response = await authenticated_client.get("/poi/bycell?s2Cell=48760549c")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "peak"
@@ -557,8 +557,8 @@ class TestGetPoiByCell:
     @pytest.mark.asyncio
     async def test_bycell_returns_404_for_cached_cell_no_poi(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return 404 for cached cell with no POI data."""
-        cache_with_data("89195da4bbbffff", None, [])
-        response = await authenticated_client.get("/poi/bycell?h3Cell=89195da4bbbffff")
+        cache_with_data("48760549c", None, [])
+        response = await authenticated_client.get("/poi/bycell?s2Cell=48760549c")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -569,7 +569,7 @@ class TestGetPoiByCell:
         mock_cell_activity
     ) -> None:
         """GET /poi/bycell should return 404 for inactive natural tile."""
-        test_cell = "89195da4bbbffff"
+        test_cell = "48760549c"
         mock_cell_activity(inactive_cells=[test_cell])
 
         cache_with_data(test_cell,
@@ -580,7 +580,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?h3Cell={test_cell}")
+        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -602,7 +602,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?h3Cell={test_cell}")
+        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -613,7 +613,7 @@ class TestGetPoiByCell:
         mock_cell_activity
     ) -> None:
         """GET /poi/bycell should return 200 for inactive peak tile (peaks bypass activity check)."""
-        test_cell = "89195da4bbbffff"
+        test_cell = "478f7577c"
         mock_cell_activity(inactive_cells=[test_cell])
 
         cache_with_data(test_cell,
@@ -624,7 +624,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?h3Cell={test_cell}")
+        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "peak"
@@ -638,7 +638,7 @@ class TestGetPoiByCell:
         mock_cell_activity
     ) -> None:
         """GET /poi/bycell should return 200 for active natural tile."""
-        test_cell = "89195da4bbbffff"
+        test_cell = "48760549c"
         mock_cell_activity(inactive_cells=[])
 
         cache_with_data(test_cell,
@@ -649,7 +649,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?h3Cell={test_cell}")
+        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "natural"
@@ -663,7 +663,7 @@ class TestGetPoiByCell:
         mock_cell_activity
     ) -> None:
         """GET /poi/bycell should return 200 for active industrial tile."""
-        test_cell = "8a194ad20a4ffff"
+        test_cell = "47d8a83f9"
         mock_cell_activity(inactive_cells=[])
 
         cache_with_data(test_cell,
@@ -674,7 +674,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?h3Cell={test_cell}")
+        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "industrial"
