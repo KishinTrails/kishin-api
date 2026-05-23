@@ -248,7 +248,7 @@ def populateCacheForTilesOld(s2Cells: list[str], skipCached: bool = True) -> Non
     logger.info("Finished populating cache for %d tile(s)", len(uniqueChildren))
 
 
-def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryResolution: int = 5) -> None:
+def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryResolution: int = 9) -> None:
     """Populate cache using efficient single-query-per-parent approach.
 
     Instead of querying Overpass for each level-16 tile individually, this function:
