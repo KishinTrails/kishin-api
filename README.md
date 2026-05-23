@@ -16,14 +16,14 @@
 
 ---
 
-Backend API service for the Kishin Trails project, providing OSM data integration, user authentication, and geo-spatial operations with H3 fog-of-war mechanics.
+Backend API service for the Kishin Trails project, providing OSM data integration, user authentication, and geo-spatial operations with S2 cell fog-of-war mechanics.
 
 ## Features
 
 - **User Authentication** - JWT-based auth with registration/login
 - **POI Discovery** - Points of interest from OpenStreetMap (peaks, natural areas, industrial zones)
-- **H3 Geospatial Indexing** - Uber's hexagonal spatial index for location-based queries
-- **Exploration Tracking** - Track user-explored H3 cells for fog-of-war mechanics
+- **S2 Geospatial Indexing** - Google's S2 geometry library for location-based queries
+- **Exploration Tracking** - Track user-explored S2 cells for fog-of-war mechanics
 - **GPX Import Script** - CLI tool to import hiking trails from GPX files
 
 ## Prerequisites
@@ -68,43 +68,43 @@ These provide comprehensive, always-up-to-date documentation of all available en
 
 ### `import_gpx.py` - Import GPX Tracks
 
-Import GPX files and mark H3 cells as explored for a user.
+Import GPX files and mark S2 cells as explored for a user.
 
 ```bash
-poetry run python scripts/import_gpx.py <gpx_file> --user <username> [--resolution 10] [--dry-run]
+poetry run python scripts/import_gpx.py <gpx_file> --user <username> [--resolution 16] [--dry-run]
 ```
 
 **Arguments:**
 - `gpx_file` - Path to GPX file
 - `--user` - Username to associate explored cells with
-- `--resolution` - H3 resolution (default: 10)
+- `--resolution` - S2 level (default: 16)
 - `--dry-run` - Show what would be imported without saving
 
-### `debug_geo.py` - Debug Geo/H3/Overpass Utilities
+### `debug_geo.py` - Debug Geo/S2/Overpass Utilities
 
-Debug tool for testing coordinates, H3 cells, and Overpass queries.
+Debug tool for testing coordinates, S2 cells, and Overpass queries.
 
 ```bash
 poetry run python scripts/debug_geo.py --location <name> [--overpass] [--execute]
-poetry run python scripts/debug_geo.py --lat <lat> --lng <lng> [--resolution 10]
-poetry run python scripts/debug_geo.py --h3-cell <cell_id> [--level 0]
+poetry run python scripts/debug_geo.py --lat <lat> --lng <lng> [--resolution 16]
+poetry run python scripts/debug_geo.py --s2-cell <cell_id> [--parent-level 0]
 poetry run python scripts/debug_geo.py --list-locations
 ```
 
 **Arguments:**
 - `--location` - Use predefined location from DEBUG_LOCATIONS
 - `--lat` / `--lng` - Use specific coordinates
-- `--h3-cell` - Use specific H3 cell
-- `--resolution` - H3 resolution (default: 10)
-- `--level` - H3 parent level for search (default: 0)
-- `--radius` - Override radius in meters
+- `--s2-cell` - Use specific S2 cell
+- `--h3-cell` - Use specific H3 cell (converted to S2)
+- `--resolution` - S2 level (default: 16)
+- `--parent-level` - S2 parent level for search (default: 0)
 - `--overpass` - Output Overpass query
 - `--execute` - Execute the Overpass query
 - `--list-locations` - List available debug locations
 
 ### `find_perlin_params.py` - Find Optimal Perlin Noise Parameters
 
-Test Perlin noise parameter combinations against H3 cells with configurable conditions to find optimal configurations.
+Test Perlin noise parameter combinations against S2 cells with configurable conditions to find optimal configurations.
 
 ```bash
 poetry run python scripts/find_perlin_params.py --config <config.json> [--no-cache]
@@ -132,14 +132,14 @@ poetry run python scripts/find_perlin_params.py --config <config.json> [--no-cac
 
 ### `populate_cache.py` - Pre-populate POI Cache
 
-Populate cache with POI data for H3 tiles. Takes comma-separated H3 cell IDs as argument.
+Populate cache with POI data for S2 tiles. Takes comma-separated S2 cell IDs as argument.
 
 ```bash
-poetry run python scripts/populate_cache.py 851f9633fffffff,851f9637fffffff [--dry-run] [--fill-polygons] [--no-cache]
+poetry run python scripts/populate_cache.py 89c25a221,89c25a223 [--dry-run] [--fill-polygons] [--no-cache]
 ```
 
 **Arguments:**
-- `h3_cells` - Comma-separated H3 cell IDs (resolution <= 10), e.g., `'tile1,tile2,tile3'`
+- `s2_cells` - Comma-separated S2 cell IDs (level <= 16), e.g., `'89c25a221,89c25a223'`
 - `--dry-run` - Print what would be done without actually caching
 - `--fill-polygons` - Run polygon interior filling after processing tiles (second pass)
 - `--fill-only` - Only run polygon filling, skip tile processing
@@ -158,7 +158,7 @@ GitHub Actions workflows run on every push and pull request to `main`:
 
 ## 🔗 Useful Links
 
-- [H3 Viewer](https://clupasq.github.io/h3-viewer/) - Visualize H3 cells
+- [S2 Viewer](https://igorgatis.github.io/ws2/) - Visualize S2 cells
 - [Overpass Turbo](https://overpass-turbo.eu) - Query and explore OSM data
 
 ## 📂 Related Projects
