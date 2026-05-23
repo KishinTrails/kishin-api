@@ -3,7 +3,10 @@ Main entry point for the Kishin API.
 """
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+
 from kishin_trails.database import engine, Base
 from kishin_trails.auth import router as auth_router
 from kishin_trails.poi import router as poi_router
@@ -12,8 +15,6 @@ from kishin_trails.noise import router as noise_router
 from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
-
-from fastapi.middleware.cors import CORSMiddleware
 
 
 @asynccontextmanager
@@ -41,7 +42,7 @@ app = FastAPI(
 )
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[invalid-argument-type]
     allow_origins=[
         "http://localhost",
         "http://localhost:5173",

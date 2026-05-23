@@ -39,17 +39,19 @@ from __future__ import annotations
 
 import math
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Concatenate, ParamSpec, TypeVar
 
 import s2geometry as s2
 from shapely.geometry import MultiPolygon
 
 EARTH_RADIUS = 6371000
 
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
+S2Input = str | s2.S2CellId
 
 
-def _normalizeS2Cell(func: F) -> F:
+def _normalizeS2Cell(func: Callable[Concatenate[s2.S2CellId, P], R],) -> Callable[Concatenate[S2Input, P], R]:
     """Decorator that normalizes S2 cell input: strips 0x prefix, validates, and passes S2CellId to function.
 
     This decorator handles both input normalization and validation, ensuring consistent
@@ -77,9 +79,8 @@ def _normalizeS2Cell(func: F) -> F:
         s2CellIdToLatLng("0x89c25a221")  # Also works (0x stripped)
         s2CellIdToLatLng("invalid")  # Raises ValueError
     """
-
     @wraps(func)
-    def wrapper(s2Cell: str | s2.S2CellId, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(s2Cell: S2Input, *args: Any, **kwargs: Any) -> Any:
         if isinstance(s2Cell, s2.S2CellId):
             cellId = s2Cell
         else:
@@ -89,7 +90,7 @@ def _normalizeS2Cell(func: F) -> F:
                 raise ValueError(f"Invalid S2 cell token: {s2Cell}")
         return func(cellId, *args, **kwargs)
 
-    return wrapper  # type: ignore[return-value]
+    return wrapper
 
 
 def sanitizeValue(val: Any) -> str | None:
