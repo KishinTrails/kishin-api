@@ -1725,6 +1725,22 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<8)"]
 
 [[package]]
+name = "s2geometry"
+version = "0.14.1.dev33+g5365d41db"
+description = "Computational geometry and spatial indexing on the sphere"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = []
+develop = false
+
+[package.source]
+type = "git"
+url = "https://github.com/google/s2geometry"
+reference = "HEAD"
+resolved_reference = "5365d41db6e5d75a0343d37d90b62b6ef6f2d059"
+
+[[package]]
 name = "shapely"
 version = "2.1.2"
 description = "Manipulation and analysis of geometric objects"
@@ -2071,4 +2087,4 @@ standard = ["colorama (>=0.4) ; sys_platform == \"win32\"", "httptools (>=0.6.3)
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0.0"
-content-hash = "8773dc5d3c2f3a06b6aa3a25e61e28e1b8dc5560e71d51d896bbb26ffbed3415"
+content-hash = "a5a5a66a72b9a0b3c87b7d5eb1e2eb8d2d7839eb047fdd91fbd8e390e39c0f7c"

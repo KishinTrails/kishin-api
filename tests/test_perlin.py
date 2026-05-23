@@ -1,5 +1,5 @@
 """
-Tests for Perlin noise calculation functions.
+Tests for Perlin noise calculation functions using S2 geometry tokens.
 """
 
 import pytest
@@ -14,6 +14,7 @@ from kishin_trails.perlin import (
     latLngToMercator,
     getNoiseForCell,
 )
+from kishin_trails.utils import latLngToS2Cell
 
 
 class TestFade:
@@ -188,41 +189,41 @@ class TestLatLngToMercator:
 
 
 class TestGetNoiseForCell:
-    """Test the H3 cell noise function with caching."""
+    """Test the S2 cell noise function with caching."""
     @pytest.fixture
-    def valid_h3_cell(self):
-        """Provide a valid H3 cell for testing."""
-        return "8a2a1072b597fff"
+    def valid_s2_token(self):
+        """Provide a valid S2 cell token for testing."""
+        return latLngToS2Cell(40.7128, -74.0060, 16)
 
-    def test_getNoiseForCell_returns_valid_range(self, valid_h3_cell):
+    def test_getNoiseForCell_returns_valid_range(self, valid_s2_token):
         """Test getNoiseForCell returns value in [0, 1] range."""
-        result = getNoiseForCell(valid_h3_cell, 50)
+        result = getNoiseForCell(valid_s2_token, 50)
         assert 0.0 <= result <= 1.0
 
-    def test_getNoiseForCell_custom_parameters(self, valid_h3_cell):
+    def test_getNoiseForCell_custom_parameters(self, valid_s2_token):
         """Test getNoiseForCell with custom parameters."""
-        result = getNoiseForCell(valid_h3_cell, 100, octaves=5, amplitudeDecay=0.3)
+        result = getNoiseForCell(valid_s2_token, 100, octaves=5, amplitudeDecay=0.3)
         assert 0.0 <= result <= 1.0
 
-    def test_getNoiseForCell_cache_hit(self, valid_h3_cell):
+    def test_getNoiseForCell_cache_hit(self, valid_s2_token):
         """Test getNoiseForCell uses cache on second call."""
-        from kishin_trails.noise_cache import getCachedNoise, setCachedNoise, clearCache, initCache
+        from kishin_trails.noise_cache import getCachedNoise, clearCache, initCache
 
         initCache()
         clearCache()
 
-        first_call = getNoiseForCell(valid_h3_cell, 50, 3, 0.5)
-        cached_value = getCachedNoise(valid_h3_cell, 50, 3, 0.5)
+        first_call = getNoiseForCell(valid_s2_token, 50, 3, 0.5)
+        cached_value = getCachedNoise(valid_s2_token, 50, 3, 0.5)
 
         assert cached_value == first_call
 
-        second_call = getNoiseForCell(valid_h3_cell, 50, 3, 0.5)
+        second_call = getNoiseForCell(valid_s2_token, 50, 3, 0.5)
         assert second_call == first_call
 
     def test_getNoiseForCell_different_cells_different_values(self):
-        """Test different H3 cells produce different noise values."""
-        cell1 = "8a2a1072b597fff"
-        cell2 = "8a2a1072b59ffff"
+        """Test different S2 cell tokens produce different noise values."""
+        cell1 = latLngToS2Cell(40.7128, -74.0060, 16)
+        cell2 = latLngToS2Cell(34.0522, -118.2437, 16)
 
         result1 = getNoiseForCell(cell1, 50)
         result2 = getNoiseForCell(cell2, 50)

@@ -1,5 +1,5 @@
 """
-Perlin Noise implementation with 100% frontend parity.
+Perlin Noise implementation with 100% frontend parity using S2 cells.
 
 Uses the same permutation table and algorithms as the JavaScript frontend
 to ensure identical noise values for the same coordinates.
@@ -13,10 +13,8 @@ from typing import Tuple
 
 from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
 from kishin_trails.config import settings
-import h3
+from kishin_trails.utils import s2CellIdToLatLng
 
-# Exact permutation table from frontend (256 elements)
-# This must match PerlinNoiseOverlay.vue exactly for parity
 PERMUTATION_BASE = [
     151,
     160,
@@ -276,7 +274,6 @@ PERMUTATION_BASE = [
     180
 ]
 
-# Duplicate permutation table for wraparound (matches frontend implementation)
 PERMUTATION = PERMUTATION_BASE + PERMUTATION_BASE
 
 
@@ -385,7 +382,13 @@ def perlin(x: float, y: float) -> float:
 # pylint: enable=invalid-name
 
 
-def getNoiseValue(mercX: float, mercY: float, scale: int | None = None, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
+def getNoiseValue(
+    mercX: float,
+    mercY: float,
+    scale: int | None = None,
+    octaves: int | None = None,
+    amplitudeDecay: float | None = None
+) -> float:
     """
     Multi-octave Perlin noise at Mercator coordinates.
 
@@ -440,40 +443,40 @@ def latLngToMercator(lat: float, lng: float) -> Tuple[float, float]:
     Returns:
         Tuple of (merc_x, merc_y) in 0-1 range, matching MapLibre's output
     """
-    # Create point in WGS84 (EPSG:4326)
     point = Point(lng, lat)
     gdf = gpd.GeoDataFrame([{
         'geometry': point
     }],
                            crs='EPSG:4326')
 
-    # Transform to Web Mercator (EPSG:3857)
     gdfMerc = gdf.to_crs('EPSG:3857')
     mercPoint = gdfMerc.iloc[0]['geometry']
 
-    # Normalize to 0-1 range
-    # Web Mercator bounds: -20037508.34 to +20037508.34 meters
-    # This matches MapLibre's coordinate system
     worldSize = 20037508.34 * 2
     mercX = (mercPoint.x + 20037508.34) / worldSize
-    mercY = (20037508.34 - mercPoint.y) / worldSize  # Y is inverted
+    mercY = (20037508.34 - mercPoint.y) / worldSize
 
     return mercX, mercY
 
 
-def getNoiseForCell(cell: str, scale: int | None = None, octaves: int | None = None, amplitudeDecay: float | None = None) -> float:
+def getNoiseForCell(
+    cell: str,
+    scale: int | None = None,
+    octaves: int | None = None,
+    amplitudeDecay: float | None = None
+) -> float:
     """
-    Get Perlin noise value for an H3 cell by sampling its center.
+    Get Perlin noise value for an S2 cell by sampling its center.
 
-    This is the main entry point for getting noise values for H3 cells.
+    This is the main entry point for getting noise values for S2 cells.
     It:
-    1. Gets the cell center coordinates using h3.cell_to_latlng()
+    1. Gets the cell center coordinates using s2CellIdToLatLng()
     2. Converts to Mercator coordinates
     3. Computes multi-octave Perlin noise
     4. Returns normalized value in [0, 1] range
 
     Args:
-        cell: H3 cell index (resolution 10)
+        cell: S2 cell hex token
         scale: Noise scale factor (defaults to settings.NOISE_SCALE)
         octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
         amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
@@ -492,7 +495,7 @@ def getNoiseForCell(cell: str, scale: int | None = None, octaves: int | None = N
     if cached is not None:
         return cached
 
-    lat, lng = h3.cell_to_latlng(cell)
+    lat, lng = s2CellIdToLatLng(cell)
     mercX, mercY = latLngToMercator(lat, lng)
     value = getNoiseValue(mercX, mercY, scale, octaves, amplitudeDecay)
 
@@ -500,14 +503,19 @@ def getNoiseForCell(cell: str, scale: int | None = None, octaves: int | None = N
     return value
 
 
-def isCellActive(cell: str, scale: int | None = None, octaves: int | None = None, amplitudeDecay: float | None = None) -> bool:
+def isCellActive(
+    cell: str,
+    scale: int | None = None,
+    octaves: int | None = None,
+    amplitudeDecay: float | None = None
+) -> bool:
     """
-    Check if an H3 cell is active based on its Perlin noise value.
+    Check if an S2 cell is active based on its Perlin noise value.
 
     A cell is considered active if its noise value exceeds the configured threshold.
 
     Args:
-        cell: H3 cell index (resolution 10)
+        cell: S2 cell hex token
         scale: Noise scale factor (defaults to settings.NOISE_SCALE)
         octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
         amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)

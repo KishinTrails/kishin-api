@@ -379,3 +379,51 @@ def loadElementsAt(
         combined.geometry.notna().sum(),
     )
     return combined
+
+
+def loadElementsAtBounds(
+    bounds: Tuple[float, float, float, float],
+) -> gpd.GeoDataFrame:
+    """Load OSM elements within a bounding box.
+
+    Args:
+        bounds: Tuple of (south, west, north, east) bounding box coordinates.
+
+    Returns:
+        GeoDataFrame containing OSM elements (ways, relations, and nodes).
+    """
+    query = buildQuery(bounds)
+    osmData = runOverpass(query)
+    waysGdf, relationsGdf, nodesGdf = osmToGeoDataFrames(osmData)
+    geometries = reconstructMultipolygons(osmData)
+    geomById = {}
+    relIds = [
+        rel["id"]
+        for rel in osmData["elements"]
+        if rel["type"] == "relation" and rel.get("tags", {}).get("type") == "multipolygon"
+    ]
+    for rid, geom in zip(relIds, geometries):
+        geomById[rid] = geom
+    relationsGdf["geometry"] = relationsGdf["id"].map(geomById)
+    relationsGdf = relationsGdf.set_geometry("geometry")
+    waysGdf = removeWaysInsideRelations(waysGdf, relationsGdf)
+    waysGdf = waysGdf.copy()
+    waysGdf["osm_type"] = "way"
+    if relationsGdf is not None and not relationsGdf.empty:
+        relationsGdf = relationsGdf.copy()
+        relationsGdf["osm_type"] = "relation"
+    else:
+        relationsGdf = gpd.GeoDataFrame(columns=["osm_type", "geometry"], crs="EPSG:4326")
+    nodesGdf = nodesGdf.copy()
+    nodesGdf["osm_type"] = "node"
+    combined = gpd.pd.concat([waysGdf, relationsGdf, nodesGdf], ignore_index=True)
+    combined = gpd.GeoDataFrame(combined, crs="EPSG:4326")
+    logger.debug(
+        "Pipeline complete — %d ways, %d relations, %d nodes (%d total, %d with geometry)",
+        len(waysGdf),
+        len(relationsGdf),
+        len(nodesGdf),
+        len(combined),
+        combined.geometry.notna().sum(),
+    )
+    return combined

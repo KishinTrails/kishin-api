@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Test Perlin noise parameters against H3 cells with configurable conditions.
+Test Perlin noise parameters against S2 cells with configurable conditions.
 
 This script helps find optimal Perlin noise parameters (scale and threshold)
-that satisfy specific activation patterns across a set of H3 cells. It tests
+that satisfy specific activation patterns across a set of S2 cells. It tests
 combinations of parameters against user-defined conditions to find configurations
 that produce desired noise activation patterns.
 """
@@ -35,12 +35,12 @@ def loadConfig(configPath: str) -> dict[str, Any]:
 
 def isActive(cell: str, scale: int, threshold: float, octaves: int = 3, amplitudeDecay: float = 0.5) -> bool:
     """
-    Determine if an H3 cell is considered 'active' based on its noise value.
+    Determine if an S2 cell is considered 'active' based on its noise value.
 
     A cell is active when its Perlin noise value exceeds the threshold.
 
     Args:
-        cell: H3 cell identifier.
+        cell: S2 cell identifier.
         scale: Noise scale parameter.
         threshold: Threshold value for activation (0-1 range).
         octaves: Number of noise octaves.
@@ -269,7 +269,7 @@ def main():
     5. Reports the first satisfying combination or indicates no solution found
     """
     parser = argparse.ArgumentParser(
-        description="Test Perlin noise parameters against H3 cells with configurable conditions"
+        description="Test Perlin noise parameters against S2 cells with configurable conditions"
     )
     parser.add_argument("--config", type=str, required=True, help="Path to JSON configuration file")
     parser.add_argument("--no-cache", action="store_true", help="Run without using or saving to cache")
@@ -322,7 +322,7 @@ def main():
                 break
 
     if solution:
-        print(f"\n✓ Found solution!")
+        print("\n✓ Found solution!")
         print(f"  scale: {solution['scale']}")
         print(f"  threshold: {solution['threshold']}")
         print(f"  octaves: {solution['octaves']}")

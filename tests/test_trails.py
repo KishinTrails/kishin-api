@@ -32,10 +32,10 @@ async def test_explored_returns_user_explored_tiles(db_session):
     test_user = User(id=1, username="trailstest", hashed_password="dummy_hash")
     db_session.add(test_user)
 
-    tile1 = Tile(h3_cell="851f9eabfffffff", tile_type="peak")
-    tile2 = Tile(h3_cell="851f2c2ffffffff", tile_type="natural")
-    tile3 = Tile(h3_cell="85196b17fffffff", tile_type="industrial")
-    tile4 = Tile(h3_cell="851fa443fffffff", tile_type=None)
+    tile1 = Tile(s2_cell_id="478f74", tile_type="peak")
+    tile2 = Tile(s2_cell_id="465704", tile_type="natural")
+    tile3 = Tile(s2_cell_id="47c5ac", tile_type="industrial")
+    tile4 = Tile(s2_cell_id="47c3c4", tile_type=None)
     db_session.add_all([tile1, tile2, tile3, tile4])
     db_session.commit()
 
@@ -60,8 +60,8 @@ async def test_explored_returns_user_explored_tiles(db_session):
     assert response.status_code == 200
     result = response.json()
     assert set(result["explored"]) == {
-        "851f9eabfffffff",
-        "851f2c2ffffffff",
-        "85196b17fffffff",
-        "851fa443fffffff",
+        "478f74",
+        "465704",
+        "47c5ac",
+        "47c3c4",
     }
