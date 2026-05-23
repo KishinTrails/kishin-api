@@ -42,7 +42,7 @@ def insertOrGetPostProcessingPoi(osmId: int, name: str | None, tileType: str):
     """Insert or get existing PostProcessingPoI. Returns the ID.
     
     This is used for polygon features (forests, parks, industrial zones) that span
-    multiple H3 tiles. The POI is stored separately and linked to tiles via a junction
+    multiple S2 tiles. The POI is stored separately and linked to tiles via a junction
     table, allowing a second pass to fill interior tiles with the correct tile_type.
     """
     session = SESSION_LOCAL()
