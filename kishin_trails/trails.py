@@ -68,5 +68,17 @@ if router:
         _dbSession: Session = Depends(getDb),
         cell: str | None = None,
     ):
+        """
+        Log an explored tiles request.
+
+        Records the request for monitoring and debugging purposes.
+
+        Args:
+            currentUser: The authenticated user from JWT token.
+            _dbSession: Database session (unused, required by FastAPI).
+            cell: Optional S2 cell ID included in the request.
+
+        Returns:
+            None.
+        """
         logger.info("POST /trails/explored — user: %s, cell: %s", currentUser.username, cell)
-        return None

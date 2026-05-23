@@ -322,7 +322,7 @@ def main():
                 break
 
     if solution:
-        print(f"\n✓ Found solution!")
+        print("\n✓ Found solution!")
         print(f"  scale: {solution['scale']}")
         print(f"  threshold: {solution['threshold']}")
         print(f"  octaves: {solution['octaves']}")
