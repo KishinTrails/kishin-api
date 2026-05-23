@@ -1709,14 +1709,14 @@ cli = ["click (>=5.0)"]
 
 [[package]]
 name = "python-multipart"
-version = "0.0.22"
+version = "0.0.29"
 description = "A streaming multipart parser for Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "python_multipart-0.0.22-py3-none-any.whl", hash = "sha256:2b2cd894c83d21bf49d702499531c7bafd057d730c201782048f7945d82de155"},
-    {file = "python_multipart-0.0.22.tar.gz", hash = "sha256:7340bef99a7e0032613f56dc36027b959fd3b30a787ed62d310e951f7c3a3a58"},
+    {file = "python_multipart-0.0.29-py3-none-any.whl", hash = "sha256:2ddcc971cef266225f54f552d8fa10bcfbb1f14446caec199060daac59ff2d69"},
+    {file = "python_multipart-0.0.29.tar.gz", hash = "sha256:643e93849196645e2dbdd81a0f8829a23123ad7f797a84a364c6fb3563f18904"},
 ]
 
 [[package]]
@@ -1743,7 +1743,7 @@ use-chardet-on-py3 = ["chardet (>=3.0.2,<8)"]
 
 [[package]]
 name = "s2geometry"
-version = "0.14.1.dev33+g5365d41db"
+version = "0.14.1.dev36+g9864ff722"
 description = "Computational geometry and spatial indexing on the sphere"
 optional = false
 python-versions = ">=3.10"
@@ -2104,4 +2104,4 @@ standard = ["colorama (>=0.4) ; sys_platform == \"win32\"", "httptools (>=0.6.3)
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0.0"
-content-hash = "a5a5a66a72b9a0b3c87b7d5eb1e2eb8d2d7839eb047fdd91fbd8e390e39c0f7c"
+content-hash = "b31257c24496e7189cde94be6a755ff15af080006a7b3686ae7efc5d72a81ff9"
