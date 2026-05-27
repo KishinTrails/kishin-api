@@ -317,7 +317,7 @@ def s2CellsFromPolygon(geometry: Any, level: int = 10) -> list[str]:
     allCells = []
     for geom in geometries:
         coords = list(geom.exterior.coords[:-1])
-        s2Points = [s2.S2LatLng.FromDegrees(lat, lng).ToPoint() for lat, lng in coords]
+        s2Points = [s2.S2LatLng.FromDegrees(lat, lng).ToPoint() for lng, lat in coords]
 
         loop = s2.S2Loop()
         loop.Init(s2Points)

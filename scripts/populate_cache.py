@@ -252,7 +252,7 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
     """Populate cache using efficient single-query-per-parent approach.
 
     Instead of querying Overpass for each level-16 tile individually, this function:
-    1. Groups input tiles by their level-5 (or configurable) parent
+    1. Groups input tiles by their level-9 (or configurable) parent
     2. Makes ONE Overpass query per parent tile
     3. Distributes elements to their correct level-16 tiles based on geometry
     4. Caches each level-16 tile separately
@@ -262,7 +262,7 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
     Args:
         s2Cells: List of parent S2 cell IDs (level <= 16).
         skipCached: If True, skip tiles that already exist in database.
-        queryResolution: S2 cell level for grouping queries (default 5).
+        queryResolution: S2 cell level for grouping queries (default 9).
                         Lower = fewer queries but larger result sets.
     """
     if queryResolution > 16:
@@ -385,7 +385,7 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
                             })
 
     logger.info("Processing %d polygon(s) for post-processing...", len(polygonProcessing))
-    for osmId, name, tileType, geometry in polygonProcessing:
+    for osmId, name, tileType, geometry in tqdm(polygonProcessing, desc="Preprocessing polygons"):
         poiId = insertOrGetPostProcessingPoi(osmId, name, tileType)
 
         allCells = []
@@ -556,7 +556,7 @@ def main() -> None:
         logger.info("Dry run: would process %d level-16 tiles", len(uniqueChildren))
     else:
         skipCached = not args.no_cache
-        populateCacheForTiles(s2Cells, skipCached=skipCached, queryResolution=5)
+        populateCacheForTiles(s2Cells, skipCached=skipCached, queryResolution=9)
         logger.info("Successfully processed %d S2 parent tile(s)", len(s2Cells))
 
     # Second pass: fill interior tiles of polygon features
