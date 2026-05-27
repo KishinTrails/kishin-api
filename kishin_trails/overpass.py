@@ -237,7 +237,7 @@ def osmToGeoDataFrames(osmJson: dict) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFram
     relationsRows: List[dict] = []
     for elem in elements:
         if elem["type"] == "way":
-            coords = [(nodes[nid]["lon"], nodes[nid]["lat"]) for nid in elem.get("nodes", []) if nid in nodes]
+            coords = [(nodes[nid]["lat"], nodes[nid]["lon"]) for nid in elem.get("nodes", []) if nid in nodes]
             if len(coords) >= 3 and coords[0] == coords[-1]:
                 geom = Polygon(coords)
             elif len(coords) >= 2:
