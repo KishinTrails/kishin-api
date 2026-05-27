@@ -381,9 +381,7 @@ def loadElementsAt(
     return combined
 
 
-def loadElementsAtBounds(
-    bounds: Tuple[float, float, float, float],
-) -> gpd.GeoDataFrame:
+def loadElementsAtBounds(bounds: Tuple[float, float, float, float],) -> gpd.GeoDataFrame:
     """Load OSM elements within a bounding box.
 
     Args:
