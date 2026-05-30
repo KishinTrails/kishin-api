@@ -115,10 +115,16 @@ def init_engine() -> None:
     SESSION_LOCAL = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-# Initialise at import time for the main process.
-engine = None
-SESSION_LOCAL = None
-init_engine()
+# Initialise at import time for the main process.  engine and SESSION_LOCAL
+# are assigned here with their real types so importers and the type checker
+# always see Engine / sessionmaker, never None.
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={
+        "check_same_thread": False
+    },
+)
+SESSION_LOCAL = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # ---------------------------------------------------------------------------
 # ORM base class
