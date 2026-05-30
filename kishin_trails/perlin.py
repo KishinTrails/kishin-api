@@ -1,20 +1,64 @@
 """
-Perlin Noise implementation with 100% frontend parity using S2 cells.
+Perlin noise implementation with frontend parity via S2 cells.
 
 Uses the same permutation table and algorithms as the JavaScript frontend
-to ensure identical noise values for the same coordinates.
+to guarantee identical noise values for the same input coordinates.
+
+Coordinate pipeline
+-------------------
+S2 cell token
+  → centre lat/lng  (via ``s2CellIdToLatLng``)
+  → Web Mercator (EPSG:3857) in metres  (via pyproj)
+  → normalised [0, 1] Mercator space  (matching MapLibre's MercatorCoordinate)
+  → multi-octave Perlin noise  → [0, 1] scalar
+
+Normalization
+-------------
+Raw multi-octave Perlin output is **not** bounded to [-1, 1]; the true range
+is [-max_amplitude, +max_amplitude] where::
+
+    max_amplitude = sum(amplitudeDecay**i for i in range(octaves))
+
+``getNoiseValue`` divides by ``max_amplitude`` before the [0, 1] shift, so
+the returned value is always in [0, 1] regardless of octave/decay settings.
 """
 
 import math
-import geopandas as gpd
 
-from shapely.geometry import Point
 from typing import Tuple
+
+from pyproj import Transformer
 
 from kishin_trails.noise_cache import getCachedNoise, setCachedNoise
 from kishin_trails.config import settings
 from kishin_trails.utils import s2CellIdToLatLng
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Semi-circumference of the Earth at the equator in EPSG:3857 (Web Mercator),
+# metres.  This is the authoritative bound of the projection: the coordinate
+# space spans [-MERCATOR_HALF_WORLD, +MERCATOR_HALF_WORLD] on both axes.
+# Source: EPSG registry / OGC Web Mercator specification.
+MERCATOR_HALF_WORLD: float = 20037508.342789244
+
+# Module-level pyproj transformer (constructed once, thread-safe for reads).
+# ``always_xy=True`` ensures the axis order is (longitude, latitude) —
+# i.e. (x, y) — regardless of the CRS definition, matching JS / MapLibre
+# conventions.
+_WGS84_TO_MERC: Transformer = Transformer.from_crs(
+    "EPSG:4326",
+    "EPSG:3857",
+    always_xy=True,
+)
+
+# ---------------------------------------------------------------------------
+# Classic Perlin noise primitives
+# ---------------------------------------------------------------------------
+
+#: Reference permutation table (256 values, duplicated to avoid modular
+#: indexing at lookup time).  Must be identical to the frontend implementation.
 PERMUTATION_BASE = [
     151,
     160,
@@ -274,79 +318,92 @@ PERMUTATION_BASE = [
     180
 ]
 
-PERMUTATION = PERMUTATION_BASE + PERMUTATION_BASE
-
+PERMUTATION: list[int] = PERMUTATION_BASE + PERMUTATION_BASE
 
 # pylint: disable=invalid-name
+
+
 def fade(t: float) -> float:
     """
-    Smoothstep function for smooth interpolation.
+    Quintic smoothstep (Ken Perlin's improved fade curve).
 
-    This is the exact same fade function as the frontend:
-    t*t*t*(t*(t*6 - 15) + 10)
+    Computes ``6t⁵ − 15t⁴ + 10t³``, which has zero first and second
+    derivatives at ``t = 0`` and ``t = 1``.  This eliminates the visual
+    interpolation artefacts produced by the cubic smoothstep used in
+    classic Perlin noise.
+
+    Identical to the frontend expression ``t*t*t*(t*(t*6 - 15) + 10)``.
 
     Args:
-        t: Input value (typically between 0 and 1)
+        t: Input value, typically in [0, 1].
 
     Returns:
-        Smoothed value
+        Smoothed value in [0, 1].
     """
     return t * t * t * (t * (t*6 - 15) + 10)
 
 
 def lerp(a: float, b: float, t: float) -> float:
     """
-    Linear interpolation between two values.
+    Linear interpolation between *a* and *b*.
 
-    This is the exact same lerp function as the frontend:
-    a + t * (b - a)
+    Computes ``a + t * (b − a)``, identical to the frontend implementation.
 
     Args:
-        a: First value
-        b: Second value
-        t: Interpolation factor (0 = all a, 1 = all b)
+        a: Start value (returned when ``t == 0``).
+        b: End value (returned when ``t == 1``).
+        t: Interpolation factor.
 
     Returns:
-        Interpolated value
+        Interpolated value.
     """
     return a + t * (b-a)
 
 
 def grad(hash_val: int, x: float, y: float) -> float:
     """
-    Compute gradient based on hash value.
+    Select and apply one of four gradient vectors based on *hash_val*.
 
-    This picks one of 4 directions based on the hash, exactly like the frontend.
+    The lower two bits of *hash_val* select a gradient direction from
+    ``{(+x,+y), (-x,+y), (+x,-y), (-x,-y)}``, matching the 2-D gradient
+    table used by the frontend.
 
     Args:
-        hash_val: Hash value to determine gradient direction
-        x: Distance in X direction
-        y: Distance in Y direction
+        hash_val: Hash value whose lower two bits determine the gradient.
+        x: Distance from the grid corner along the X axis.
+        y: Distance from the grid corner along the Y axis.
 
     Returns:
-        Gradient value
+        Dot product of the chosen pseudo-random gradient with the distance
+        vector ``(x, y)``.
     """
     h = hash_val & 3
-    return ((h & 1) == 0 and x or -x) + ((h & 2) == 0 and y or -y)
+    gx = x if (h & 1) == 0 else -x
+    gy = y if (h & 2) == 0 else -y
+    return gx + gy
 
 
 def perlin(x: float, y: float) -> float:
     """
-    Classic Perlin noise at coordinates (x, y).
+    Classic 2-D Perlin noise at coordinates ``(x, y)``.
 
-    Uses the exact same algorithm as the frontend for parity:
-    1. Find grid cell
-    2. Calculate local coordinates within cell
-    3. Apply fade function for smoothness
-    4. Get gradients at 4 corners
-    5. Interpolate between corners
+    Algorithm (identical to the frontend):
+
+    1. Locate the unit-square grid cell that contains ``(x, y)``.
+    2. Compute the local fractional offsets within that cell.
+    3. Apply the quintic fade curve to both offsets.
+    4. Hash the four corner integers via the permutation table.
+    5. Compute gradient contributions at all four corners.
+    6. Bilinearly interpolate using the faded offsets.
 
     Args:
-        x: X coordinate in noise space
-        y: Y coordinate in noise space
+        x: X coordinate in noise space.
+        y: Y coordinate in noise space.
 
     Returns:
-        Noise value (typically in range [-1, 1] before normalization)
+        Raw noise value.  Range is approximately [-1, 1] for a single
+        octave but is **not** strictly bounded; use ``getNoiseValue`` for
+        a normalised result.
     """
     X = int(math.floor(x)) & 255
     Y = int(math.floor(y)) & 255
@@ -361,25 +418,41 @@ def perlin(x: float, y: float) -> float:
     B = PERMUTATION[X + 1] + Y
 
     return lerp(
-        lerp(grad(PERMUTATION[A],
-                  x,
-                  y),
-             grad(PERMUTATION[B],
-                  x - 1,
-                  y),
-             u),
-        lerp(grad(PERMUTATION[A + 1],
-                  x,
-                  y - 1),
-             grad(PERMUTATION[B + 1],
-                  x - 1,
-                  y - 1),
-             u),
-        v
+        lerp(
+            grad(
+                PERMUTATION[A],
+                x,
+                y,
+            ),
+            grad(
+                PERMUTATION[B],
+                x - 1,
+                y,
+            ),
+            u,
+        ),
+        lerp(
+            grad(
+                PERMUTATION[A + 1],
+                x,
+                y - 1,
+            ),
+            grad(
+                PERMUTATION[B + 1],
+                x - 1,
+                y - 1,
+            ),
+            u,
+        ),
+        v,
     )
 
 
 # pylint: enable=invalid-name
+
+# ---------------------------------------------------------------------------
+# Multi-octave noise
+# ---------------------------------------------------------------------------
 
 
 def getNoiseValue(
@@ -387,27 +460,36 @@ def getNoiseValue(
     mercY: float,
     scale: int | None = None,
     octaves: int | None = None,
-    amplitudeDecay: float | None = None
+    amplitudeDecay: float | None = None,
 ) -> float:
     """
-    Multi-octave Perlin noise at Mercator coordinates.
+    Multi-octave Perlin noise at normalised Mercator coordinates.
 
-    This replicates the frontend's getNoiseValue function exactly:
-    - Configurable octaves of noise
-    - frequency = scale * 500
-    - amplitude starts at 1.0, multiplied by amplitudeDecay each octave
-    - frequency multiplied by 2 each octave
-    - Final normalization: (value + 1) / 2
+    Replicates the frontend's ``getNoiseValue`` function:
+
+    * Initial frequency = ``scale × 500``.
+    * Each octave doubles the frequency and multiplies the amplitude by
+      ``amplitudeDecay``.
+    * The raw sum is divided by the total possible amplitude
+      (``Σ amplitudeDecay^i`` for ``i`` in ``[0, octaves)``) before the
+      final [0, 1] shift, guaranteeing the result is always in [0, 1].
+
+    .. note::
+        If the JavaScript frontend does **not** perform this amplitude
+        normalisation, parity will diverge for multi-octave configurations.
+        Verify the frontend implementation when changing octave settings.
 
     Args:
-        mercX: X coordinate in Mercator space (0-1 range, like MapLibre)
-        mercY: Y coordinate in Mercator space (0-1 range, like MapLibre)
-        scale: Noise scale factor (defaults to settings.NOISE_SCALE)
-        octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
-        amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
+        mercX: Normalised Mercator X coordinate in [0, 1].
+        mercY: Normalised Mercator Y coordinate in [0, 1].
+        scale: Noise scale factor.  Defaults to ``settings.NOISE_SCALE``.
+        octaves: Number of octaves to accumulate.
+            Defaults to ``settings.NOISE_OCTAVES``.
+        amplitudeDecay: Per-octave amplitude multiplier (persistence).
+            Defaults to ``settings.NOISE_AMPLITUDE_DECAY``.
 
     Returns:
-        Noise value in range [0, 1]
+        Noise value in [0, 1].
     """
     if scale is None:
         scale = settings.NOISE_SCALE
@@ -425,64 +507,81 @@ def getNoiseValue(
         amplitude *= amplitudeDecay
         frequency *= 2
 
-    return (value+1) / 2
+    # Normalise: divide by the geometric sum of amplitudes so that the result
+    # is in [-1, 1], then shift to [0, 1].
+    # Without this step, multi-octave sums exceed [-1, 1] and the final value
+    # can fall outside [0, 1].
+    maxAmplitude = sum(amplitudeDecay**i for i in range(octaves))
+    return (value/maxAmplitude + 1) / 2
+
+
+# ---------------------------------------------------------------------------
+# Coordinate conversion
+# ---------------------------------------------------------------------------
 
 
 def latLngToMercator(lat: float, lng: float) -> Tuple[float, float]:
     """
-    Convert latitude/longitude to Web Mercator coordinates (0-1 range).
+    Convert WGS84 latitude/longitude to normalised Web Mercator coordinates.
 
-    Uses geopandas to transform coordinates from WGS84 (EPSG:4326) to
-    Web Mercator (EPSG:3857), then normalizes to 0-1 range to match
-    MapLibre's MercatorCoordinate.fromLngLat().
+    Uses a module-level ``pyproj.Transformer`` (EPSG:4326 → EPSG:3857) to
+    project the point, then normalises the result to [0, 1] using the
+    ``MERCATOR_HALF_WORLD`` bound — matching the behaviour of MapLibre's
+    ``MercatorCoordinate.fromLngLat()``.
+
+    This implementation replaces an earlier ``geopandas``-based approach.
+    The ``GeoDataFrame`` construction overhead was significant for per-cell
+    calls; the ``Transformer`` object is constructed once at module load and
+    reused for every call.
 
     Args:
-        lat: Latitude in degrees
-        lng: Longitude in degrees
+        lat: Latitude in degrees (WGS84).
+        lng: Longitude in degrees (WGS84).
 
     Returns:
-        Tuple of (merc_x, merc_y) in 0-1 range, matching MapLibre's output
+        ``(mercX, mercY)`` in [0, 1], where ``(0, 0)`` is the top-left
+        corner of the Web Mercator extent (north-west) and ``(1, 1)`` is
+        the bottom-right corner (south-east), matching MapLibre's convention.
     """
-    point = Point(lng, lat)
-    gdf = gpd.GeoDataFrame([{
-        'geometry': point
-    }],
-                           crs='EPSG:4326')
-
-    gdfMerc = gdf.to_crs('EPSG:3857')
-    mercPoint = gdfMerc.iloc[0]['geometry']
-
-    worldSize = 20037508.34 * 2
-    mercX = (mercPoint.x + 20037508.34) / worldSize
-    mercY = (20037508.34 - mercPoint.y) / worldSize
+    mercX_m, mercY_m = _WGS84_TO_MERC.transform(lng, lat)  # note: x=lng, y=lat
+    world_size = MERCATOR_HALF_WORLD * 2
+    mercX = (mercX_m+MERCATOR_HALF_WORLD) / world_size
+    mercY = (MERCATOR_HALF_WORLD-mercY_m) / world_size
 
     return mercX, mercY
+
+
+# ---------------------------------------------------------------------------
+# S2 cell helpers
+# ---------------------------------------------------------------------------
 
 
 def getNoiseForCell(
     cell: str,
     scale: int | None = None,
     octaves: int | None = None,
-    amplitudeDecay: float | None = None
+    amplitudeDecay: float | None = None,
 ) -> float:
     """
-    Get Perlin noise value for an S2 cell by sampling its center.
+    Return the Perlin noise value for an S2 cell, with caching.
 
-    This is the main entry point for getting noise values for S2 cells.
-    It:
-    1. Gets the cell center coordinates using s2CellIdToLatLng()
-    2. Converts to Mercator coordinates
-    3. Computes multi-octave Perlin noise
-    4. Returns normalized value in [0, 1] range
+    The pipeline is:
+
+    1. Check the noise cache; return immediately on a hit.
+    2. Resolve the cell token to a centre lat/lng via ``s2CellIdToLatLng``.
+    3. Convert to normalised Mercator coordinates.
+    4. Compute multi-octave Perlin noise.
+    5. Persist the result to the cache and return it.
 
     Args:
-        cell: S2 cell hex token
-        scale: Noise scale factor (defaults to settings.NOISE_SCALE)
-        octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
-        amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
+        cell: S2 cell hex token.
+        scale: Noise scale factor.  Defaults to ``settings.NOISE_SCALE``.
+        octaves: Number of noise octaves.  Defaults to ``settings.NOISE_OCTAVES``.
+        amplitudeDecay: Per-octave amplitude multiplier.
+            Defaults to ``settings.NOISE_AMPLITUDE_DECAY``.
 
     Returns:
-        Noise value in range [0, 1]
+        Noise value in [0, 1].
     """
     if scale is None:
         scale = settings.NOISE_SCALE
@@ -507,21 +606,23 @@ def isCellActive(
     cell: str,
     scale: int | None = None,
     octaves: int | None = None,
-    amplitudeDecay: float | None = None
+    amplitudeDecay: float | None = None,
 ) -> bool:
     """
-    Check if an S2 cell is active based on its Perlin noise value.
+    Return whether an S2 cell's noise value exceeds the activity threshold.
 
-    A cell is considered active if its noise value exceeds the configured threshold.
+    A cell is considered *active* when its noise value is strictly greater
+    than ``settings.NOISE_ACTIVITY_THRESHOLD``.
 
     Args:
-        cell: S2 cell hex token
-        scale: Noise scale factor (defaults to settings.NOISE_SCALE)
-        octaves: Number of noise octaves (defaults to settings.NOISE_OCTAVES)
-        amplitudeDecay: Amplitude decay factor per octave (defaults to settings.NOISE_AMPLITUDE_DECAY)
+        cell: S2 cell hex token.
+        scale: Noise scale factor.  Defaults to ``settings.NOISE_SCALE``.
+        octaves: Number of noise octaves.  Defaults to ``settings.NOISE_OCTAVES``.
+        amplitudeDecay: Per-octave amplitude multiplier.
+            Defaults to ``settings.NOISE_AMPLITUDE_DECAY``.
 
     Returns:
-        True if the cell is active (noise > threshold), False otherwise
+        ``True`` if ``noiseValue > settings.NOISE_ACTIVITY_THRESHOLD``.
     """
     noiseValue = getNoiseForCell(cell, scale, octaves, amplitudeDecay)
     return noiseValue > settings.NOISE_ACTIVITY_THRESHOLD
