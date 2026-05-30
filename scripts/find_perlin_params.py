@@ -198,23 +198,27 @@ def checkCondition(
         return satisfied, message
 
     # ------------------------------------------------------------------
-    # Per-cell conditions
+    # All-cells conditions
     # ------------------------------------------------------------------
     if condition_type == "cell_must_be_active":
-        cell = condition["cells"][0]
-        active = isActive(cell, scale, threshold, octaves, amplitudeDecay)
-        return active, (
-            f"cell_must_be_active: {cell} is "
-            f"{'active' if active else 'inactive'}"
+        cells = condition["cells"]
+        inactive = [c for c in cells if not isActive(c, scale, threshold, octaves, amplitudeDecay)]
+        satisfied = len(inactive) == 0
+        message = (
+            f"cell_must_be_active: {len(cells) - len(inactive)}/{len(cells)} active" +
+            (f" (inactive: {inactive})" if inactive else "")
         )
+        return satisfied, message
 
     if condition_type == "cell_must_be_inactive":
-        cell = condition["cells"][0]
-        active = isActive(cell, scale, threshold, octaves, amplitudeDecay)
-        return not active, (
-            f"cell_must_be_inactive: {cell} is "
-            f"{'inactive' if not active else 'active'}"
+        cells = condition["cells"]
+        active = [c for c in cells if isActive(c, scale, threshold, octaves, amplitudeDecay)]
+        satisfied = len(active) == 0
+        message = (
+            f"cell_must_be_inactive: {len(cells) - len(active)}/{len(cells)} inactive" +
+            (f" (still active: {active})" if active else "")
         )
+        return satisfied, message
 
     raise ValueError(f"Unknown condition type: {condition_type!r}")
 
