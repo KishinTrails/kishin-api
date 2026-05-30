@@ -127,3 +127,37 @@ class NoiseResponse(BaseModel):
 
     cell: str
     noise: float
+
+
+class AddExploredTilesRequest(BaseModel):
+    """Request model for marking S2 cells as explored.
+
+    Attributes:
+        cells: List of S2 cell identifiers (hex tokens).
+    """
+
+    cells: List[str]
+
+
+class SkippedCell(BaseModel):
+    """Schema for a cell that was skipped during exploration.
+
+    Attributes:
+        cell: The S2 cell identifier.
+        reason: Reason for skipping ('invalid' or 'not_found').
+    """
+
+    cell: str
+    reason: str
+
+
+class AddExploredTilesResult(BaseModel):
+    """Response model for add explored tiles operation.
+
+    Attributes:
+        added: List of S2 cell identifiers that were marked as explored.
+        skipped: List of cells that were skipped with reasons.
+    """
+
+    added: List[str]
+    skipped: List[SkippedCell]
