@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from kishin_trails.database import getDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
-from kishin_trails.schemas import ExploredTilesOut
+import s2geometry as s2
+
+from kishin_trails.schemas import AddExploredTilesRequest, AddExploredTilesResult, ExploredTilesOut, SkippedCell
 
 logger = logging.getLogger("trails")
 
@@ -61,24 +63,63 @@ if router:
 
     @router.post(
         "/explored",
-        summary="Log explored tiles request",
+        summary="Mark S2 cells as explored",
+        response_model=AddExploredTilesResult,
     )
-    def logExploredTilesRequest(
+    def addExploredTiles(
+        request: AddExploredTilesRequest,
         currentUser: User = Depends(getCurrentUser),
-        _dbSession: Session = Depends(getDb),
-        cell: str | None = None,
+        dbSession: Session = Depends(getDb),
     ):
         """
-        Log an explored tiles request.
+        Mark S2 cells as explored by the authenticated user.
 
-        Records the request for monitoring and debugging purposes.
+        Validates each cell, filters out already explored ones,
+        and only marks tiles that exist in the database.
 
         Args:
+            request: Contains list of S2 cell tokens to mark as explored.
             currentUser: The authenticated user from JWT token.
-            _dbSession: Database session (unused, required by FastAPI).
-            cell: Optional S2 cell ID included in the request.
+            dbSession: Database session for querying and updating.
 
         Returns:
-            None.
+            Dictionary with added and skipped cell lists.
         """
-        logger.info("POST /trails/explored — user: %s, cell: %s", currentUser.username, cell)
+        if len(request.cells) > 100:
+            request.cells = request.cells[:100]
+
+        from kishin_trails.models import Tile
+
+        added: list[str] = []
+        skipped: list[SkippedCell] = []
+
+        for cellToken in request.cells:
+            cellId = s2.S2CellId.FromToken(cellToken)
+            if not cellId.is_valid() or cellId.id() == 0:
+                skipped.append(SkippedCell(cell=cellToken, reason="invalid"))
+                continue
+
+            tile = dbSession.query(Tile).filter(Tile.s2_cell_id == cellToken).first()
+            if not tile:
+                skipped.append(SkippedCell(cell=cellToken, reason="not_found"))
+                continue
+
+            if tile in currentUser.explored_tiles:
+                continue
+
+            currentUser.explored_tiles.append(tile)
+            added.append(cellToken)
+
+        dbSession.commit()
+
+        logger.info(
+            "POST /trails/explored — user: %s, added: %d, skipped: %d",
+            currentUser.username,
+            len(added),
+            len(skipped),
+        )
+
+        return {
+            "added": added,
+            "skipped": skipped,
+        }
