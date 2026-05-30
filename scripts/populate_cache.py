@@ -125,129 +125,6 @@ def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
         session.close()
 
 
-def populateCacheForTilesOld(s2Cells: list[str], skipCached: bool = True) -> None:
-    """Populate cache for multiple S2 tiles with unified progress tracking.
-
-    Args:
-        s2Cells: List of parent S2 cell IDs.
-        skipCached: If True, skip tiles that already exist in database.
-                    If False, re-process all tiles (for --no-cache mode).
-    """
-    # Expand all parent tiles to level 16 children for consistent granularity
-    # Level 16 provides a good balance between detail and performance
-    allChildren: list[str] = []
-    for parentCell in s2Cells:
-        res = getS2CellLevel(parentCell)
-        if res > 16:
-            logger.error("S2 cell level must be >= 16, got %d for %s", res, parentCell)
-            continue
-
-        # Uncompact lower-resolution tiles to level 16 children
-        if res < 16:
-            children = s2CellToChildren(parentCell, 16)
-            allChildren.extend(children)
-        else:
-            # Already at level 16, use as-is
-            allChildren.append(parentCell)
-
-    # Remove duplicates that occur when parent tiles overlap or share children
-    initialCount = len(allChildren)
-    uniqueChildren = list(dict.fromkeys(allChildren))
-    deduplicatedCount = initialCount - len(uniqueChildren)
-
-    logger.info("Collected %d level-16 tiles from %d parent tile(s)", len(uniqueChildren), len(s2Cells))
-    if deduplicatedCount > 0:
-        logger.info("Removed %d duplicate tile(s)", deduplicatedCount)
-
-    for childCell in tqdm(uniqueChildren, desc="Populating cache"):
-        # Check if already cached to avoid redundant API calls
-        existing = getTile(childCell)
-        if existing and skipCached:
-            logger.debug("Tile %s already cached, skipping", childCell)
-            continue
-
-        # Get bounds for the child cell to define search area
-        try:
-            bounds = getS2CellBounds(childCell)
-        except ValueError as e:
-            logger.warning("Skipping tile %s: %s", childCell, e)
-            continue
-
-        # Load OSM elements with exponential backoff retry for rate limiting/timeout errors
-        # Overpass API may return 429 (rate limit) or 504 (timeout) under load
-        retryDelay = 5
-        while True:
-            try:
-                gdf = loadElementsAtBounds(bounds)
-                break
-            except requests.exceptions.HTTPError as e:
-                if e.response is not None and e.response.status_code in (429, 504):
-                    logger.warning(
-                        "Overpass API error %s for tile %s, retrying in %ds",
-                        e.response.status_code,
-                        childCell,
-                        retryDelay
-                    )
-                    time.sleep(retryDelay)
-                    retryDelay *= 2  # Exponential backoff: 5s, 10s, 20s, 40s...
-                else:
-                    # Other HTTP errors are not retried
-                    raise
-
-        # Skip to next tile if gdf is None (error occurred)
-        if gdf is None:
-            continue
-        elements = []
-        for _, row in gdf.iterrows():
-            tags = dict(row.items())
-            geometry = tags.get("geometry")
-            if geometry is None:
-                assert False, "Geometry not present in element!"
-            elif isinstance(geometry, Point) and not pointInS2Cell(childCell, geometry.y, geometry.x):
-                # Skip points that fall outside this S2 cell (may be in adjacent tile)
-                continue
-            elif isinstance(geometry, (MultiPolygon, Polygon)):
-                # Handle polygon features (forests, parks, industrial zones) that span multiple tiles
-                # These require post-processing to fill interior tiles
-                tileType = None
-                if tags.get('landuse') == 'industrial':
-                    tileType = 'industrial'
-                elif tags.get('landuse') == 'forest':
-                    tileType = 'natural'
-                elif tags.get('leisure') == 'park':
-                    tileType = 'natural'
-
-                if tileType:
-                    # Convert polygon to S2 cells at level 16
-                    allCells = []
-                    if isinstance(geometry, Polygon):
-                        allCells = s2CellsFromPolygon(geometry, 16)
-                    elif isinstance(geometry, MultiPolygon):
-                        for poly in geometry.geoms:
-                            allCells.extend(s2CellsFromPolygon(poly, 16))
-
-                    # Store POI for post-processing (second pass will fill interior tiles)
-                    poiId = insertOrGetPostProcessingPoi(row['id'], tags.get('name'), tileType)
-
-                    # Link this POI to all S2 cells it covers
-                    for cell in allCells:
-                        insertJunctionEntry(cell, poiId)
-
-            # Add element to cache regardless of type
-            elements.append({
-                "id": row["id"],
-                "tags": dict(row.items())
-            })
-
-        # Filter waypoints to select the most important POI type for this tile
-        # Priority: PeakPoI > NaturalPoI > IndustrialPoI (only one type per tile)
-        waypoints, tileType = filterWaypointsForCache(elements)
-        # Store tile and its POIs in the database cache
-        setTile(childCell, tileType, waypoints)
-
-    logger.info("Finished populating cache for %d tile(s)", len(uniqueChildren))
-
-
 def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryResolution: int = 9) -> None:
     """Populate cache using efficient single-query-per-parent approach.
 
@@ -306,13 +183,14 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
     polygonProcessing: list[tuple[int, str | None, str, Polygon | MultiPolygon]] = []
 
     logger.info("Querying Overpass API for %d parent tile(s)...", len(parentTiles))
-    for parentTile in parentTiles:
+    for parentTile in tqdm(sorted(parentTiles, reverse=True), desc="Querying parent tiles"):
         try:
             bounds = getS2CellBounds(parentTile)
         except ValueError as e:
             logger.warning("Skipping parent tile %s: %s", parentTile, e)
             continue
 
+        logger.debug("Querying Overpass API for parent tile %s", parentTile)
         retryDelay = 5
         gdf = None
         while True:
