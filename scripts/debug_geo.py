@@ -9,6 +9,7 @@ import requests
 
 import h3
 
+from kishin_trails.perlin import getNoiseForCell, isCellActive
 from kishin_trails.utils import (
     latLngToS2Cell,
     s2CellIdToLatLng,
@@ -21,8 +22,43 @@ from kishin_trails.utils import (
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-S2_TO_H3 = {0:0, 1:0, 2:0, 3:0, 4:1, 5:2, 6:2, 7:3, 8:4, 9:5, 10:5, 11:6, 12:7, 13:7, 14:8, 15:9, 16:10, 17:10, 18:11, 19:12, 20:12, 21:13, 22:14, 23:15, 24:15, 25:15, 26:15, 27:15, 28:15, 29:15, 30:15}
-H3_TO_S2 = {v: k for k, v in S2_TO_H3.items()}
+S2_TO_H3 = {
+    0: 0,
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 1,
+    5: 2,
+    6: 2,
+    7: 3,
+    8: 4,
+    9: 5,
+    10: 5,
+    11: 6,
+    12: 7,
+    13: 7,
+    14: 8,
+    15: 9,
+    16: 10,
+    17: 10,
+    18: 11,
+    19: 12,
+    20: 12,
+    21: 13,
+    22: 14,
+    23: 15,
+    24: 15,
+    25: 15,
+    26: 15,
+    27: 15,
+    28: 15,
+    29: 15,
+    30: 15
+}
+H3_TO_S2 = {
+    v: k
+    for k, v in S2_TO_H3.items()
+}
 
 
 def main():
@@ -135,6 +171,17 @@ def main():
     print(f"Lat/Lng: lat={lat}, lng={lng}")
     print(f"S2 (lvl {s2Level}): {s2CellRes16}")
     print(f"H3 (res {h3Res}): {h3Cell}")
+    if s2Level == 16:
+        from kishin_trails.config import settings
+        noiseValue = getNoiseForCell(s2CellRes16)
+        isActive = isCellActive(s2CellRes16)
+        print(f"\n--- Perlin Noise (lvl 16) ---")
+        print(f"Noise value: {noiseValue:.6f}")
+        print(f"Active: {isActive}")
+        print(
+            f"Parameters: scale={settings.NOISE_SCALE}, octaves={settings.NOISE_OCTAVES}, "
+            f"amplitudeDecay={settings.NOISE_AMPLITUDE_DECAY}, threshold={settings.NOISE_ACTIVITY_THRESHOLD}"
+        )
 
     print(f"\n--- Search Cell (parent level {args.parent_level}) ---")
     print(f"S2: {searchCellId} (lvl {getS2CellLevel(searchCellId)})")

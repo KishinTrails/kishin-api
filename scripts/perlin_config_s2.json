@@ -1,0 +1,157 @@
+{
+  "state_space": {
+    "scale": {
+      "min": 150,
+      "max": 300,
+      "step": 1
+    },
+    "threshold": {
+      "min": 0.7,
+      "max": 1.0,
+      "step": 0.01
+    },
+    "octaves": {
+      "min": 1,
+      "max": 6,
+      "step": 1
+    },
+    "amplitudeDecay": {
+      "min": 0.3,
+      "max": 0.8,
+      "step": 0.1
+    }
+  },
+  "conditions": [
+    {
+      "comment": "pourliat start",
+      "type": "interval_active",
+      "min": 1,
+      "max": 2,
+      "cells": [
+        "47f71b77d",
+        "47f71b77f",
+        "47f71b82b",
+        "47f71b9d5",
+        "47f71b9d7",
+        "47f71b77b",
+        "47f71b779",
+        "47f71b781"
+      ]
+    },
+    {
+      "comment": "pourliat roundabout",
+      "type": "cell_must_be_inactive",
+      "cells": [
+        "47f71b787",
+        "47f71b829"
+      ]
+    },
+    {
+      "comment": "pourliat stadium",
+      "type": "cell_must_be_active",
+      "cells": [
+        "47f71b0bb",
+        "47f71b0b1"
+      ]
+    },
+    {
+      "comment": "pourliat botanic",
+      "type": "interval_active",
+      "min": 1,
+      "max": 2,
+      "cells": [
+        "47f71b76d",
+        "47f71b769",
+        "47f71b769",
+        "47f71b76b",
+        "47f71b76f",
+        "47f71b743",
+        "47f71b741"
+      ]
+    },
+    {
+      "comment": "pourliat to ceyrat",
+      "type": "interval_active",
+      "min": 1,
+      "max": 3,
+      "cells": [
+        "47f71b0e9",
+        "47f71b0ef",
+        "47f71b0e5",
+        "47f71b0fd",
+        "47f71b101",
+        "47f71b105",
+        "47f71b0fb",
+        "47f71b103",
+        "47f71b107",
+        "47f71b109",
+        "47f71b1a7",
+        "47f71b0ff",
+        "47f71b0f9",
+        "47f71b0f1"
+      ]
+    },
+    {
+      "comment": "park beaumont",
+      "type": "interval_active",
+      "min": 1,
+      "max": 3,
+      "cells": [
+        "47f71b86b",
+        "47f71b843",
+        "47f71b86f",
+        "47f71b86f",
+        "47f71b87d",
+        "47f71b87f",
+        "47f71b869",
+        "47f71b865",
+        "47f71b87b"
+      ]
+    },
+    {
+      "comment": "too close",
+      "type": "cell_must_be_inactive",
+      "cells": [
+        "47f71b811",
+        "47f71b80d",
+        "47f71b86d",
+        "47f71b81b",
+        "47f71b80f",
+        "47f71b813",
+        "47f71b873",
+        "47f71b875",
+        "47f71b805",
+        "47f71b819",
+        "47f71b81d",
+        "47f71b803",
+        "47f71b815"
+      ]
+    },
+    {
+      "comment": "industrial romagnat",
+      "type": "interval_active",
+      "min": 3,
+      "max": 10,
+      "cells": [
+        "47f71b795",
+        "47f71b7c1",
+        "47f71b7eb",
+        "47f71b7c3",
+        "47f71b7dd",
+        "47f71b7df",
+        "47f71c827",
+        "47f71c825",
+        "47f71b7cf",
+        "47f71b7d1",
+        "47f71b7d7",
+        "47f71c829",
+        "47f71b7d9",
+        "47f71b7c5",
+        "47f71b7db",
+        "47f71c82f",
+        "47f71c831",
+        "47f71c83b"
+      ]
+    }
+  ]
+}
