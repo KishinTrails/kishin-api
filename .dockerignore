@@ -1,0 +1,14 @@
+.venv
+.git
+.github
+test
+*.md
+.env
+.env.*
+*.pyc
+__pycache__
+.pytest_cache
+.coverage
+.ty
+.pylintrc
+poetry.lock
