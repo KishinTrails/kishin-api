@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         SECRET_KEY: Secret key for JWT token signing. In production, this MUST be a secure 32-byte secret.
         ALGORITHM: Algorithm used for JWT token encoding (default: HS256).
         ACCESS_TOKEN_EXPIRE_MINUTES: Token expiration time in minutes.
+        CORS_ORIGINS: Comma-separated list of allowed origins.
         OVERPASS_URL: Base URL for the Overpass API endpoint.
         DEFAULT_CENTER_LAT: Default latitude for Overpass queries.
         DEFAULT_CENTER_LON: Default longitude for Overpass queries.
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "CHANGE_ME"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    CORS_ORIGINS: list[str] = ["http://localhost", "http://localhost:5173"]
 
     # Overpass API
     OVERPASS_URL: str = "https://overpass-api.de/api/interpreter"
