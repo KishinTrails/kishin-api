@@ -24,7 +24,7 @@ dependencies = [
 [tool.poetry]
 packages = [{include = "kishin_trails"}]
 
-[tool.poetry.dependencies]
+[tool.poetry.group.main.dependencies]
 # s2geometry has no PyPI release; installed from source via Poetry's git support.
 # PEP 621 [project].dependencies does not support git sources, so this stays here.
 s2geometry = { git = "https://github.com/google/s2geometry", rev = "9864ff722" }
