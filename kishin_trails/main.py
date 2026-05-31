@@ -15,6 +15,7 @@ from kishin_trails.noise import router as noise_router
 from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
+from kishin_trails.config import settings
 
 
 @asynccontextmanager

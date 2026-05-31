@@ -2,7 +2,7 @@ FROM python:3.14-slim
 
 # Run as non-root for security best practices.
 # Traefik routes to the container via its published port regardless of user.
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser -u 1001 -g 1001
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
