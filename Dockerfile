@@ -5,14 +5,18 @@ FROM python:3.14-slim
 RUN useradd --create-home appuser
 WORKDIR /app
 
-# Install Poetry and dependencies in a layer that is only invalidated when
-# pyproject.toml or poetry.lock change — not when application code changes.
-COPY pyproject.toml poetry.lock ./
+# Install Poetry and project dependencies in a layer that is only invalidated
+# when pyproject.toml or poetry.lock change — not when application code changes.
+# --no-root skips installing the kishin_trails package itself at this stage
+# since the source hasn't been copied yet.
+COPY pyproject.toml poetry.lock README.md ./
 RUN pip install --no-cache-dir poetry \
     && poetry config virtualenvs.in-project true \
     && poetry install --only main --no-interaction --no-ansi --no-root
 
-# Copy application code separately so the dependency layer above is cached.
+# Copy application source and install the kishin_trails package itself.
+# This layer is invalidated only when application code changes, keeping
+# the heavier dependency layer above fully cached.
 COPY kishin_trails/ ./kishin_trails/
 
 # Install the kishin_trails package itself (omitted by --no-root above).
