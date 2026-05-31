@@ -19,6 +19,7 @@ dependencies = [
     "sqlalchemy>=2.0.46,<3.0.0",
     "python-multipart>=0.0.22,<0.1.0",
     "pydantic-settings>=2.13.1,<3.0.0",
+    "s2geometry @ git+https://github.com/google/s2geometry.git@9864ff722"
 ]
 
 [tool.poetry]
@@ -27,7 +28,6 @@ packages = [{include = "kishin_trails"}]
 [tool.poetry.group.main.dependencies]
 # s2geometry has no PyPI release; installed from source via Poetry's git support.
 # PEP 621 [project].dependencies does not support git sources, so this stays here.
-s2geometry = { git = "https://github.com/google/s2geometry", rev = "9864ff722" }
 
 [tool.poetry.group.dev.dependencies]
 httpx = ">=0.28.1,<0.29.0"
