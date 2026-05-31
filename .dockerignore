@@ -2,7 +2,6 @@
 .git
 .github
 test
-*.md
 .env
 .env.*
 *.pyc
