@@ -5,6 +5,11 @@ FROM python:3.14-slim
 RUN useradd --create-home appuser
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Poetry and project dependencies in a layer that is only invalidated
 # when pyproject.toml or poetry.lock change — not when application code changes.
 # --no-root skips installing the kishin_trails package itself at this stage
