@@ -267,6 +267,29 @@ def getPostProcessingPoiByOsmId(osmId: int) -> Optional[Dict[str, Any]]:
         session.close()
 
 
+def getAllActiveTiles() -> List[Dict[str, str]]:
+    """Get all tiles that have an active POI type.
+
+    Returns only tiles where tile_type is set and either the tile is active
+    or it is a peak (peaks are always visible regardless of the active flag).
+
+    Returns:
+        List of dicts with s2_cell_id and type for each qualifying tile.
+    """
+    session = SESSION_LOCAL()
+    try:
+        result = session.execute(
+            text(
+                "SELECT s2_cell_id, tile_type FROM tiles "
+                "WHERE tile_type IS NOT NULL "
+                "AND (tile_type = 'peak' OR active = 1)"
+            )
+        )
+        return [{"s2_cell_id": row[0], "type": row[1]} for row in result.fetchall()]
+    finally:
+        session.close()
+
+
 def getAllPostProcessingPois() -> List[Dict[str, Any]]:
     """Get all PostProcessingPoI entries.
 

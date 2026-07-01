@@ -9,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Any, List, Tuple
 from shapely.geometry import LineString, MultiPolygon, Polygon, Point
 
-from kishin_trails.cache import getTile, setTile
+from kishin_trails.cache import getTile, setTile, getAllActiveTiles
 from kishin_trails.config import settings
 from kishin_trails.utils import sanitizeValue, pointInS2Cell, getS2CellCenter, getS2CellBounds
 from kishin_trails.dependencies import getCurrentUser
@@ -321,6 +321,25 @@ def getPoiDataForCell(s2Cell: str) -> dict | None:
 
 
 if router:
+
+    @router.get(
+        "/prefetch",
+        summary="Get all active POI tiles for client prefetch",
+        response_class=JSONResponse,
+    )
+    def getPrefetchData():
+        """Return all tiles with an active POI type for client-side cache prefetch.
+
+        Only returns tiles that would be served by the normal endpoints: peaks are
+        always included; other types are only included when their active flag is set
+        (Perlin noise gate). Cells absent from this response should be treated as
+        having no POI.
+
+        Returns:
+            JSON response with list of {s2_cell_id, type} for all active tiles.
+        """
+        tiles = getAllActiveTiles()
+        return JSONResponse(content={"cells": tiles})
 
     @router.get(
         "/bycell",
