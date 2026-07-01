@@ -72,11 +72,18 @@ def loginForAccessToken(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate": "Bearer"
+            },
         )
 
     accessTokenExpires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     accessToken = createAccessToken(
-        data={"sub": user.username}, expiresDelta=accessTokenExpires
+        data={
+            "sub": user.username
+        }, expiresDelta=accessTokenExpires
     )
-    return {"access_token": accessToken, "token_type": "bearer"}
+    return {
+        "access_token": accessToken,
+        "token_type": "bearer"
+    }

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     # Overpass API
     OVERPASS_URL: str = "https://overpass-api.de/api/interpreter"
+    OVERPASS_CONTACT: str = "kishin-trails"
     DEFAULT_CENTER_LAT: float = 48.85454010062465
     DEFAULT_CENTER_LON: float = 2.3476249395829583
 

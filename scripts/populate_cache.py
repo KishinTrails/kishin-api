@@ -74,8 +74,7 @@ def insertJunctionEntry(tileS2Cell: str, poiId: int) -> None:
         session.execute(
             text(
                 "INSERT OR IGNORE INTO tile_post_processing_pois (tile_s2_cell_id, post_processing_poi_id) VALUES (:tile, :poiId)"
-            ),
-            {
+            ), {
                 "tile": tileS2Cell,
                 "poiId": poiId
             }
@@ -113,8 +112,7 @@ def deletePostProcessingPoiAndJunctions(poiId: int) -> None:
     try:
         # First delete all junction entries linking this POI to tiles
         session.execute(
-            text("DELETE FROM tile_post_processing_pois WHERE post_processing_poi_id = :poiId"),
-            {
+            text("DELETE FROM tile_post_processing_pois WHERE post_processing_poi_id = :poiId"), {
                 "poiId": poiId
             }
         )
@@ -178,8 +176,7 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
 
     logger.info("Grouped into %d parent tile(s) at level %d for querying", len(parentTiles), queryResolution)
 
-    elementsByTile: dict[str,
-                         list[dict]] = {}
+    elementsByTile: dict[str, list[dict]] = {}
     polygonProcessing: list[tuple[int, str | None, str, Polygon | MultiPolygon]] = []
 
     logger.info("Querying Overpass API for %d parent tile(s)...", len(parentTiles))
@@ -200,9 +197,7 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code in (429, 504):
                     logger.warning(
-                        "Overpass API error %s for parent tile %s, retrying in %ds",
-                        e.response.status_code,
-                        parentTile,
+                        "Overpass API error %s for parent tile %s, retrying in %ds", e.response.status_code, parentTile,
                         retryDelay
                     )
                     time.sleep(retryDelay)
@@ -382,9 +377,7 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description="Populate cache with POI data for S2 tiles")
     parser.add_argument(
-        "s2_cells",
-        nargs="?",
-        help="Comma-separated S2 cell IDs (level <= 16), e.g., 'tile1,tile2,tile3'"
+        "s2_cells", nargs="?", help="Comma-separated S2 cell IDs (level <= 16), e.g., 'tile1,tile2,tile3'"
     )
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done without actually caching")
     parser.add_argument(
