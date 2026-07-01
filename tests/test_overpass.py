@@ -15,6 +15,7 @@ import shapely.ops as ops
 from httpx import AsyncClient
 
 # Import the module you want to test
+from kishin_trails.config import settings
 from kishin_trails.overpass import (
     OVERPASS_URL,
     CACHE_DIR,
@@ -153,6 +154,7 @@ def test_runOverpass_makes_request_and_caches_result(tmp_path: Path, monkeypatch
         data={
             "data": query
         },
+        headers={"User-Agent": f"KishinTrailsAPI/0.2.0 ({settings.OVERPASS_CONTACT})"},
         timeout=90,
     )
 
