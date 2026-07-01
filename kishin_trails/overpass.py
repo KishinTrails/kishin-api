@@ -23,6 +23,9 @@ from kishin_trails.config import settings
 logger = logging.getLogger("overpass")
 
 OVERPASS_URL = settings.OVERPASS_URL
+OVERPASS_HEADERS = {
+    "User-Agent": f"KishinTrailsAPI/0.2.0 ({settings.OVERPASS_CONTACT})",
+}
 # Primary cache directory used by the Overpass client. This is a constant that tests rely on.
 CACHE_DIR_REAL = Path(__file__).parent.parent / "cache"
 CACHE_DIR_REAL.mkdir(exist_ok=True)
@@ -136,6 +139,7 @@ def runOverpass(query: str, cacheDir: Path | None = None) -> dict:
         data={
             "data": query
         },
+        headers=OVERPASS_HEADERS,
         timeout=90
     )
     response.raise_for_status()
