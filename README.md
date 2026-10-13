@@ -20,11 +20,11 @@ Backend API service for the Kishin Trails project, providing OSM data integratio
 
 ## Features
 
-- **User Authentication** - JWT-based auth with registration/login
+- **User Authentication** - JWT-based login; accounts are created with the `kishin` CLI, not over HTTP
 - **POI Discovery** - Points of interest from OpenStreetMap (peaks, natural areas, industrial zones)
 - **S2 Geospatial Indexing** - Google's S2 geometry library for location-based queries
 - **Exploration Tracking** - Track user-explored S2 cells for fog-of-war mechanics
-- **GPX Import Script** - CLI tool to import hiking trails from GPX files
+- **`kishin` CLI** - Account administration, database maintenance, GPX import, cache population, and geo/noise debugging
 
 ## Prerequisites
 
@@ -64,57 +64,62 @@ Interactive API docs are available at:
 
 These provide comprehensive, always-up-to-date documentation of all available endpoints, request/response schemas, and authentication requirements.
 
-## CLI Scripts
+## `kishin` CLI
 
-### `import_gpx.py` - Import GPX Tracks
+Installed as a console script by `poetry install`; run `poetry run kishin --help` for
+the full command tree, or `poetry run kishin <group> --help` for one group.
 
-Import GPX files and mark S2 cells as explored for a user.
+### `kishin user` - Account Administration
 
-```bash
-poetry run python scripts/import_gpx.py <gpx_file> --user <username> [--resolution 16] [--dry-run]
-```
-
-**Arguments:**
-- `gpx_file` - Path to GPX file
-- `--user` - Username to associate explored cells with
-- `--resolution` - S2 level (default: 16)
-- `--dry-run` - Show what would be imported without saving
-
-### `debug_geo.py` - Debug Geo/S2/Overpass Utilities
-
-Debug tool for testing coordinates, S2 cells, and Overpass queries.
+The only way to create an account — `POST /auth/register` does not exist.
 
 ```bash
-poetry run python scripts/debug_geo.py --location <name> [--overpass] [--execute]
-poetry run python scripts/debug_geo.py --lat <lat> --lng <lng> [--resolution 16]
-poetry run python scripts/debug_geo.py --s2-cell <cell_id> [--parent-level 0]
-poetry run python scripts/debug_geo.py --list-locations
+poetry run kishin user list
+poetry run kishin user create alice [--password '...']
+poetry run kishin user show alice [--tiles]
+poetry run kishin user reset-password alice [--password '...']
+poetry run kishin user rename alice alicia
+poetry run kishin user delete alice [--yes]
 ```
 
-**Arguments:**
-- `--location` - Use predefined location from DEBUG_LOCATIONS
-- `--lat` / `--lng` - Use specific coordinates
-- `--s2-cell` - Use specific S2 cell
-- `--h3-cell` - Use specific H3 cell (converted to S2)
-- `--resolution` - S2 level (default: 16)
-- `--parent-level` - S2 parent level for search (default: 0)
-- `--overpass` - Output Overpass query
-- `--execute` - Execute the Overpass query
-- `--list-locations` - List available debug locations
+Omit `--password` on `create`/`reset-password` and one is generated and printed once.
 
-### `find_perlin_params.py` - Find Optimal Perlin Noise Parameters
-
-Test Perlin noise parameter combinations against S2 cells with configurable conditions to find optimal configurations.
+### `kishin db` - Database Maintenance
 
 ```bash
-poetry run python scripts/find_perlin_params.py --config <config.json> [--no-cache]
+poetry run kishin db init         # create any missing tables
+poetry run kishin db stats        # row counts per table
+poetry run kishin db checkpoint   # run a WAL checkpoint now
 ```
 
-**Arguments:**
-- `--config` - Path to JSON configuration file with conditions and state_space
-- `--no-cache` - Run without using or saving to cache
+### `kishin gpx import` - Import GPX Tracks
 
-**Config file format:**
+Import a GPX file and mark its S2 cells as explored for a user.
+
+```bash
+poetry run kishin gpx import <gpx_file> --user <username> [--resolution 16] [--dry-run]
+```
+
+### `kishin geo` - Debug Geo/S2/Overpass Utilities
+
+```bash
+poetry run kishin geo cell <lat> <lng> [--resolution 16]
+poetry run kishin geo info <s2_cell> [--parent-level 0]
+poetry run kishin geo h3 <h3_cell>
+poetry run kishin geo locations [--location <name>]
+poetry run kishin geo overpass <s2_cell> [--execute]
+```
+
+### `kishin noise` - Perlin Noise Fog-of-War Gate
+
+```bash
+poetry run kishin noise cell <s2_cell> [--scale] [--octaves] [--amplitude-decay]
+poetry run kishin noise search --config <config.json>
+poetry run kishin noise clear-cache [--yes]
+```
+
+`search` grid-searches Perlin noise parameters against S2 cells with configurable
+activation conditions. **Config file format:**
 ```json
 {
   "conditions": [
@@ -130,20 +135,18 @@ poetry run python scripts/find_perlin_params.py --config <config.json> [--no-cac
 }
 ```
 
-### `populate_cache.py` - Pre-populate POI Cache
-
-Populate cache with POI data for S2 tiles. Takes comma-separated S2 cell IDs as argument.
+### `kishin cache` - Pre-populate the POI Cache
 
 ```bash
-poetry run python scripts/populate_cache.py 89c25a221,89c25a223 [--dry-run] [--fill-polygons] [--no-cache]
+poetry run kishin cache populate 89c25a221,89c25a223 [--dry-run] [--fill-polygons] [--no-cache]
+poetry run kishin cache populate --fill-only
+poetry run kishin cache show 89c25a221
 ```
 
-**Arguments:**
-- `s2_cells` - Comma-separated S2 cell IDs (level <= 16), e.g., `'89c25a221,89c25a223'`
-- `--dry-run` - Print what would be done without actually caching
-- `--fill-polygons` - Run polygon interior filling after processing tiles (second pass)
-- `--fill-only` - Only run polygon filling, skip tile processing
-- `--no-cache` - Re-process all tiles, inserting only missing POIs (preserve existing data)
+`populate` takes comma-separated S2 cell IDs (level <= 16), uncompacts them to level
+16, and queries Overpass once per level-9 parent. `--fill-polygons` runs a second pass
+filling the interior tiles of polygon features (forests, parks, industrial zones)
+after the first pass stores them.
 
 ## CI/CD
 

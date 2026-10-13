@@ -95,7 +95,7 @@ def track_set_tile(mocker):
     def track_set_tile(s2Cell, tileType, pois):
         set_tile_calls.append(s2Cell)
 
-    mocker.patch("scripts.populate_cache.setTile", side_effect=track_set_tile)
+    mocker.patch("kishin_trails.populate.setTile", side_effect=track_set_tile)
     return set_tile_calls
 
 
@@ -103,7 +103,7 @@ class TestTileIdempotency:
     """Tests for Tile and POI idempotency."""
     def test_populate_twice_no_duplicates(self, db_session, mock_overpass_response, s2_test_cell, mocker):
         """Running populate twice produces identical DB state, no duplicates."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Mock runOverpass to return our fixed response
         mocker.patch("kishin_trails.overpass.runOverpass", return_value=mock_overpass_response)
@@ -121,7 +121,7 @@ class TestTileIdempotency:
 
     def test_restore_deleted_poi(self, db_session, mock_overpass_response, s2_test_cell, mocker):
         """Deleting a POI and re-running restores it without affecting others."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         mocker.patch("kishin_trails.overpass.runOverpass", return_value=mock_overpass_response)
 
@@ -151,7 +151,7 @@ class TestTileIdempotency:
 
     def test_complete_partial_tile(self, db_session, mock_overpass_response, s2_test_cell, mocker):
         """Tile row exists - normal mode skips it without re-processing."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Simulate interrupted run: Tile created, no POIs
         tile = Tile(s2_cell_id=s2_test_cell, tile_type=None)
@@ -170,7 +170,7 @@ class TestTileIdempotency:
 
     def test_tile_type_never_updated(self, db_session, s2_test_cell, mocker):
         """Existing tile_type is preserved even if Overpass returns different type."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Pre-populate with specific tile_type
         setTile(s2_test_cell,
@@ -209,7 +209,7 @@ class TestTileIdempotency:
 
     def test_tile_type_preserved_when_null(self, db_session, mock_overpass_response, s2_test_cell, mocker):
         """Tile with NULL tile_type keeps NULL after re-population."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Create tile with NULL tile_type
         tile = Tile(s2_cell_id=s2_test_cell, tile_type=None)
@@ -227,7 +227,7 @@ class TestTileIdempotency:
 
     def test_restore_empty_tile_with_skip_cached_false(self, db_session, mock_overpass_response, s2_test_cell, mocker):
         """Tile exists with no POIs - skipCached=False restores POIs."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Create tile with no POIs
         tile = Tile(s2_cell_id=s2_test_cell, tile_type=None)
@@ -256,7 +256,7 @@ class TestTileIdempotency:
         mocker
     ):
         """Tile exists with partial POIs - skipCached=False restores missing POIs."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         mocker.patch("kishin_trails.overpass.runOverpass", return_value=mock_overpass_response)
 
@@ -288,7 +288,7 @@ class TestTileIdempotency:
 
     def test_populate_tile_type_with_skip_cached_false(self, db_session, mock_overpass_response, s2_test_cell, mocker):
         """Tile with NULL tile_type - skipCached=False populates tile_type from POIs."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Create tile with NULL tile_type
         tile = Tile(s2_cell_id=s2_test_cell, tile_type=None)
@@ -314,7 +314,7 @@ class TestPostProcessingPoIIdempotency:
     """Tests for PostProcessingPoI and junction table idempotency."""
     def test_insert_or_get_poi_no_duplicates(self, db_session):
         """insertOrGetPostProcessingPoi never creates duplicates."""
-        from scripts.populate_cache import insertOrGetPostProcessingPoi
+        from kishin_trails.populate import insertOrGetPostProcessingPoi
 
         # First call
         id1 = insertOrGetPostProcessingPoi(12345, "Forest", "natural")
@@ -330,7 +330,7 @@ class TestPostProcessingPoIIdempotency:
 
     def test_insert_junction_entry_no_duplicates(self, db_session, s2_test_cell):
         """insertJunctionEntry with INSERT OR IGNORE never creates duplicates."""
-        from scripts.populate_cache import insertJunctionEntry, insertOrGetPostProcessingPoi
+        from kishin_trails.populate import insertJunctionEntry, insertOrGetPostProcessingPoi
 
         poi_id = insertOrGetPostProcessingPoi(12345, "Forest", "natural")
 
@@ -352,7 +352,7 @@ class TestPostProcessingPoIIdempotency:
 
     def test_fill_polygons_safe_to_rerun(self, db_session, s2_test_cell):
         """--fill-polygons can be run multiple times safely."""
-        from scripts.populate_cache import (fillPolygonInteriors, insertJunctionEntry, insertOrGetPostProcessingPoi)
+        from kishin_trails.populate import (fillPolygonInteriors, insertJunctionEntry, insertOrGetPostProcessingPoi)
 
         # Setup: PostProcessingPoI with linked tiles
         poi_id = insertOrGetPostProcessingPoi(12345, "Forest", "natural")
@@ -379,7 +379,7 @@ class TestPostProcessingPoIIdempotency:
 
     def test_post_processing_poi_to_tile_restoration(self, db_session, s2_test_cell, mocker):
         """PostProcessingPoI linked to tiles - validates tile_type propagation with skipCached=False."""
-        from scripts.populate_cache import (
+        from kishin_trails.populate import (
             fillPolygonInteriors,
             insertJunctionEntry,
             insertOrGetPostProcessingPoi,
@@ -432,7 +432,7 @@ class TestNoCacheFlag:
     """Tests for --no-cache flag behavior."""
     def test_no_cache_flag_processes_all_tiles(self, db_session, s2_test_cell, mocker):
         """--no-cache flag forces re-processing of all tiles."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Pre-populate tile
         setTile(s2_test_cell,
@@ -459,7 +459,7 @@ class TestNoCacheFlag:
 
     def test_normal_mode_skips_cached_tiles(self, db_session, s2_test_cell, mocker, track_set_tile):
         """Normal mode (skipCached=True) skips cached tiles."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Pre-populate tile
         setTile(s2_test_cell,
@@ -485,7 +485,7 @@ class TestNoCacheFlag:
 
     def test_batch_processing_skips_cached(self, db_session, mocker, s2_parent_cell, s2_chilren_cells, track_set_tile):
         """Normal mode skips cached tiles in batch processing."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         children = s2_chilren_cells
 
@@ -526,7 +526,7 @@ class TestNoCacheFlag:
         track_set_tile
     ):
         """--no-cache mode processes all tiles in batch, even cached ones."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         children = s2_chilren_cells
 
@@ -669,7 +669,7 @@ class TestBatchProcessing:
     """Tests for batch tile processing with deduplication."""
     def test_batch_processing_deduplication(self, db_session, mocker, s2_parent_cell, s2_chilren_cells, track_set_tile):
         """Batch processing deduplicates overlapping children from multiple parents."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         children = s2_chilren_cells
 
@@ -694,7 +694,7 @@ class TestBatchProcessing:
 
     def test_batch_processing_multiple_parents(self, db_session, mocker, s2_parent_cell, track_set_tile):
         """Batch processing handles multiple non-overlapping parents."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
         from kishin_trails.utils import s2CellToChildren, s2CellToParent
 
         # Get two non-overlapping parent tiles
@@ -720,7 +720,7 @@ class TestBatchProcessing:
 
     def test_batch_processing_with_duplicates(self, db_session, mocker, s2_test_cell):
         """Batch processing logs deduplication when same tile is passed twice."""
-        from scripts.populate_cache import populateCacheForTiles
+        from kishin_trails.populate import populateCacheForTiles
 
         # Mock to track Overpass calls
         mock_run_overpass = mocker.patch("kishin_trails.overpass.runOverpass")
