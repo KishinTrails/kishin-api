@@ -48,8 +48,13 @@ class Settings(BaseSettings):
     NOISE_AMPLITUDE_DECAY: float = 0.5
     NOISE_ACTIVITY_THRESHOLD: float = 0.5
 
-    # Load from .env file if it exists
-    model_config = SettingsConfigDict(env_file=".env")
+    # Load from .env file if it exists. secrets_dir lets SECRET_KEY (or any
+    # field) come from a mounted file instead — e.g. a Docker secret at
+    # /run/secrets/SECRET_KEY — without it ever passing through `docker
+    # inspect`'s Env list the way a plain environment variable does. A
+    # missing secrets_dir (the normal case outside a container) only
+    # produces a warning, so this is a no-op for local/.env development.
+    model_config = SettingsConfigDict(env_file=".env", secrets_dir="/run/secrets")
 
 
 settings = Settings()
