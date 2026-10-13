@@ -19,17 +19,6 @@ class UserBase(BaseModel):
     username: str
 
 
-class UserCreate(UserBase):
-    """Schema for creating a new user.
-
-    Attributes:
-        username: Desired username (must be unique).
-        password: Plain-text password (will be hashed).
-    """
-
-    password: str
-
-
 class User(UserBase):
     """Schema for returning user data.
 

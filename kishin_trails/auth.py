@@ -1,5 +1,9 @@
 """
 Authentication routes for the Kishin API.
+
+Registration is not served over HTTP; accounts are created with `kishin user create`
+(see `kishin_trails/cli/user.py`), which is the only path by which a `User` row comes
+into existence.
 """
 
 from datetime import timedelta
@@ -12,41 +16,13 @@ from sqlalchemy.orm import Session
 from kishin_trails.config import settings
 from kishin_trails.database import getDb
 from kishin_trails.models import User
-from kishin_trails.schemas import Token, UserCreate, User as UserSchema
+from kishin_trails.schemas import Token
 from kishin_trails.security import (
     createAccessToken,
-    getPasswordHash,
     verifyPassword,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-@router.post("/register", response_model=UserSchema, summary="Register a new user")
-def registerUser(user: UserCreate, dbSession: Session = Depends(getDb)):
-    """
-    Register a new user in the system.
-
-    Args:
-        user: The user creation schema containing username and password.
-        dbSession: The database session.
-
-    Returns:
-        The created user record.
-
-    Raises:
-        HTTPException 400: If the username is already registered.
-    """
-    dbUser = dbSession.query(User).filter(User.username == user.username).first()
-    if dbUser:
-        raise HTTPException(status_code=400, detail="Username already registered")
-
-    hashedPassword = getPasswordHash(user.password)
-    dbUser = User(username=user.username, hashed_password=hashedPassword)
-    dbSession.add(dbUser)
-    dbSession.commit()
-    dbSession.refresh(dbUser)
-    return dbUser
 
 
 @router.post("/login", response_model=Token, summary="Login to receive a JWT")
