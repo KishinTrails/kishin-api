@@ -101,6 +101,10 @@ if router:
 
             tile = dbSession.query(Tile).filter(Tile.s2_cell_id == cellToken).first()
             if not tile:
+                # TODO: temporary. Unknown cells are skipped because creating a tile
+                # requires a real-time Overpass query, which is not trusted yet. Hook
+                # tile creation here once it is, so runs through unmapped terrain yield
+                # normally. See wiki running_stats.md §7 "Unmapped terrain".
                 skipped.append(SkippedCell(cell=cellToken, reason="not_found"))
                 continue
 
