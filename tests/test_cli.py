@@ -40,6 +40,26 @@ def invokeGpx(db_session) -> Callable[..., object]:
     return run
 
 
+@pytest.fixture
+def gpxFile(tmp_path) -> str:
+    """A minimal two-point GPX track, written fresh so the test owns it.
+
+    *.gpx is gitignored (real activity files are personal hiking data, not
+    repo content), so a fixture file checked into the repo is not an option.
+    """
+    path = tmp_path / "track.gpx"
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">\n'
+        "  <trk><trkseg>\n"
+        '    <trkpt lat="45.770000" lon="3.080000"></trkpt>\n'
+        '    <trkpt lat="45.771000" lon="3.081000"></trkpt>\n'
+        "  </trkseg></trk>\n"
+        "</gpx>\n"
+    )
+    return str(path)
+
+
 # --- user create -------------------------------------------------------------
 
 
@@ -179,20 +199,18 @@ def test_delete_unknown_username_fails(invokeUser):
 # --- gpx import ------------------------------------------------------------------
 
 
-def test_gpx_import_dry_run_writes_nothing(invokeUser, invokeGpx, db_session):
+def test_gpx_import_dry_run_writes_nothing(invokeUser, invokeGpx, db_session, gpxFile):
     invokeUser("create", USERNAME, "--password", PASSWORD)
     user = db_session.query(User).filter(User.username == USERNAME).first()
     assert len(user.explored_tiles) == 0
 
-    result = invokeGpx(
-        "import", "activity_22334447152.gpx", "--user", USERNAME, "--dry-run"
-    )
+    result = invokeGpx("import", gpxFile, "--user", USERNAME, "--dry-run")
     assert result.exit_code == 0, result.output
 
     db_session.refresh(user)
     assert len(user.explored_tiles) == 0
 
 
-def test_gpx_import_unknown_username_fails(invokeGpx):
-    result = invokeGpx("import", "activity_22334447152.gpx", "--user", "nobody")
+def test_gpx_import_unknown_username_fails(invokeGpx, gpxFile):
+    result = invokeGpx("import", gpxFile, "--user", "nobody")
     assert result.exit_code == 1
