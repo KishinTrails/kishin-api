@@ -5,7 +5,7 @@ Defines the database schema for users, tiles (S2 cells), and Points of Interest.
 """
 
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kishin_trails.database import Base
 
@@ -21,11 +21,13 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
 
-    explored_tiles = relationship("Tile", secondary="user_explored_tiles", back_populates="explored_by")
+    explored_tiles: Mapped[list["Tile"]] = relationship(
+        "Tile", secondary="user_explored_tiles", back_populates="explored_by"
+    )
 
 
 class Tile(Base):
@@ -41,16 +43,18 @@ class Tile(Base):
 
     __tablename__ = "tiles"
 
-    s2_cell_id = Column(String, primary_key=True)
-    tile_type = Column(String)
-    active = Column(Boolean)
-    pois = relationship("POI", back_populates="tile", cascade="all, delete-orphan")
-    post_processing_pois = relationship(
+    s2_cell_id: Mapped[str] = mapped_column(String, primary_key=True)
+    tile_type: Mapped[str | None] = mapped_column(String)
+    active: Mapped[bool | None] = mapped_column(Boolean)
+    pois: Mapped[list["POI"]] = relationship("POI", back_populates="tile", cascade="all, delete-orphan")
+    post_processing_pois: Mapped[list["PostProcessingPoI"]] = relationship(
         "PostProcessingPoI",
         secondary="tile_post_processing_pois",
         back_populates="tiles"
     )
-    explored_by = relationship("User", secondary="user_explored_tiles", back_populates="explored_tiles")
+    explored_by: Mapped[list["User"]] = relationship(
+        "User", secondary="user_explored_tiles", back_populates="explored_tiles"
+    )
 
 
 class POI(Base):
@@ -71,15 +75,15 @@ class POI(Base):
 
     __tablename__ = "pois"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    s2_cell_id = Column(String, ForeignKey("tiles.s2_cell_id"), nullable=False, index=True)
-    osm_id = Column(Integer, nullable=False)
-    name = Column(String)
-    lat = Column(Float, nullable=False)
-    lon = Column(Float, nullable=False)
-    elevation = Column(Integer)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    s2_cell_id: Mapped[str] = mapped_column(String, ForeignKey("tiles.s2_cell_id"), nullable=False, index=True)
+    osm_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str | None] = mapped_column(String)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    elevation: Mapped[int | None] = mapped_column(Integer)
 
-    tile = relationship("Tile", back_populates="pois")
+    tile: Mapped["Tile"] = relationship("Tile", back_populates="pois")
 
     __table_args__ = (UniqueConstraint('s2_cell_id', 'osm_id', name='uix_s2_osm'),)
 
@@ -127,11 +131,13 @@ class PostProcessingPoI(Base):
 
     __tablename__ = "post_processing_pois"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    osm_id = Column(Integer, nullable=False, unique=True)
-    name = Column(String)
-    tile_type = Column(String, nullable=False)
-    tiles = relationship("Tile", secondary="tile_post_processing_pois", back_populates="post_processing_pois")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    osm_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    name: Mapped[str | None] = mapped_column(String)
+    tile_type: Mapped[str] = mapped_column(String, nullable=False)
+    tiles: Mapped[list["Tile"]] = relationship(
+        "Tile", secondary="tile_post_processing_pois", back_populates="post_processing_pois"
+    )
 
 
 class NoiseCache(Base):
@@ -150,8 +156,8 @@ class NoiseCache(Base):
 
     __tablename__ = "noise_cache"
 
-    s2_cell_id = Column(String, primary_key=True)
-    scale = Column(Integer, primary_key=True)
-    octaves = Column(Integer, primary_key=True)
-    amplitude_decay = Column(Float, primary_key=True)
-    noise_value = Column(Float, nullable=False)
+    s2_cell_id: Mapped[str] = mapped_column(String, primary_key=True)
+    scale: Mapped[int] = mapped_column(Integer, primary_key=True)
+    octaves: Mapped[int] = mapped_column(Integer, primary_key=True)
+    amplitude_decay: Mapped[float] = mapped_column(Float, primary_key=True)
+    noise_value: Mapped[float] = mapped_column(Float, nullable=False)

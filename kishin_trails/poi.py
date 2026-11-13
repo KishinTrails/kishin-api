@@ -6,7 +6,9 @@ Provides API endpoints for querying nearby POIs based on location.
 
 import logging
 
-from typing import TYPE_CHECKING, Any, List, Tuple
+from typing import Any, List, Tuple
+from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import JSONResponse
 from shapely.geometry import LineString, MultiPolygon, Polygon, Point
 
 from kishin_trails.cache import getTile, setTile, getAllActiveTiles
@@ -15,29 +17,12 @@ from kishin_trails.utils import sanitizeValue, pointInS2Cell, getS2CellCenter, g
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.overpass import loadElementsAtBounds
 
-if TYPE_CHECKING:
-    from fastapi import APIRouter, HTTPException, Query, Depends
-    from fastapi.responses import JSONResponse
-
-try:
-    from fastapi import APIRouter, HTTPException, Query, Depends
-except ImportError:  # pragma: no cover
-    APIRouter = HTTPException = Query = Depends = None  # type: ignore[assignment]
-
-try:
-    from fastapi.responses import JSONResponse
-except ImportError:  # pragma: no cover
-    JSONResponse = None  # type: ignore[assignment]
-
 logger = logging.getLogger("PoI")
 
 DEFAULT_CENTER_LAT = settings.DEFAULT_CENTER_LAT
 DEFAULT_CENTER_LON = settings.DEFAULT_CENTER_LON
 
-if APIRouter:
-    router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(getCurrentUser)])
-else:
-    router = None
+router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(getCurrentUser)])
 
 
 class PoI:
@@ -320,94 +305,92 @@ def getPoiDataForCell(s2Cell: str) -> dict | None:
     return formatPoiFromCache(cached, s2Cell, lat, lng)
 
 
-if router:
+@router.get(
+    "/prefetch",
+    summary="Get all active POI tiles for client prefetch",
+    response_class=JSONResponse,
+)
+def getPrefetchData():
+    """Return all tiles with an active POI type for client-side cache prefetch.
 
-    @router.get(
-        "/prefetch",
-        summary="Get all active POI tiles for client prefetch",
-        response_class=JSONResponse,
-    )
-    def getPrefetchData():
-        """Return all tiles with an active POI type for client-side cache prefetch.
+    Only returns tiles that would be served by the normal endpoints: peaks are
+    always included; other types are only included when their active flag is set
+    (Perlin noise gate). Cells absent from this response should be treated as
+    having no POI.
 
-        Only returns tiles that would be served by the normal endpoints: peaks are
-        always included; other types are only included when their active flag is set
-        (Perlin noise gate). Cells absent from this response should be treated as
-        having no POI.
+    Returns:
+        JSON response with list of {s2_cell_id, type} for all active tiles.
+    """
+    tiles = getAllActiveTiles()
+    return JSONResponse(content={"cells": tiles})
 
-        Returns:
-            JSON response with list of {s2_cell_id, type} for all active tiles.
-        """
-        tiles = getAllActiveTiles()
-        return JSONResponse(content={"cells": tiles})
+@router.get(
+    "/bycell",
+    summary="Get POI for a single S2 cell",
+    response_class=JSONResponse,
+)
+def getPoiByCell(s2Cell: str = Query(
+    ...,
+    description="S2 cell identifier (e.g., '89c25a221').",
+)):
+    """Get POI data for a specific S2 cell.
 
-    @router.get(
-        "/bycell",
-        summary="Get POI for a single S2 cell",
-        response_class=JSONResponse,
-    )
-    def getPoiByCell(s2Cell: str = Query(
-        ...,
-        description="S2 cell identifier (e.g., '89c25a221').",
-    )):
-        """Get POI data for a specific S2 cell.
+    Args:
+        s2Cell: S2 cell identifier.
 
-        Args:
-            s2Cell: S2 cell identifier.
+    Returns:
+        JSON response with POI data for the cell.
 
-        Returns:
-            JSON response with POI data for the cell.
+    Raises:
+        HTTPException 400: If the S2 cell is invalid.
+        HTTPException 404: If no POI data found for this cell.
+    """
+    data = getPoiDataForCell(s2Cell)
+    if data is None:
+        raise HTTPException(status_code=400, detail="Invalid S2 cell")
 
-        Raises:
-            HTTPException 400: If the S2 cell is invalid.
-            HTTPException 404: If no POI data found for this cell.
-        """
+    if data.get("type") is None:
+        raise HTTPException(
+            status_code=404,
+            detail="POI data not found for this cell. Please try a different location or wait for the cache to be populated."
+        )
+
+    return JSONResponse(content=data)
+
+@router.get(
+    "/bycells",
+    summary="Get POI for multiple S2 cells",
+    response_class=JSONResponse,
+)
+def getPoiByCells(s2Cells: List[str] = Query(
+    ...,
+    description="List of S2 cell identifiers.",
+)):
+    """Get POI data for multiple S2 cells in a single request.
+
+    Args:
+        s2Cells: List of S2 cell identifiers.
+
+    Returns:
+        JSON response with POI data for cells that have POI information.
+
+    Raises:
+        HTTPException 400: If no cells provided.
+        HTTPException 404: If no POI data found for any of the provided cells.
+    """
+    if not s2Cells:
+        raise HTTPException(status_code=400, detail="No cells provided")
+
+    results = []
+    for s2Cell in s2Cells:
         data = getPoiDataForCell(s2Cell)
-        if data is None:
-            raise HTTPException(status_code=400, detail="Invalid S2 cell")
+        if data is not None and data.get("type") is not None:
+            results.append(data)
 
-        if data.get("type") is None:
-            raise HTTPException(
-                status_code=404,
-                detail="POI data not found for this cell. Please try a different location or wait for the cache to be populated."
-            )
+    if not results:
+        raise HTTPException(status_code=204, detail="No valid tiles found for the provided cells.")
 
-        return JSONResponse(content=data)
-
-    @router.get(
-        "/bycells",
-        summary="Get POI for multiple S2 cells",
-        response_class=JSONResponse,
-    )
-    def getPoiByCells(s2Cells: List[str] = Query(
-        ...,
-        description="List of S2 cell identifiers.",
-    )):
-        """Get POI data for multiple S2 cells in a single request.
-
-        Args:
-            s2Cells: List of S2 cell identifiers.
-
-        Returns:
-            JSON response with POI data for cells that have POI information.
-
-        Raises:
-            HTTPException 400: If no cells provided.
-            HTTPException 404: If no POI data found for any of the provided cells.
-        """
-        if not s2Cells:
-            raise HTTPException(status_code=400, detail="No cells provided")
-
-        results = []
-        for s2Cell in s2Cells:
-            data = getPoiDataForCell(s2Cell)
-            if data is not None and data.get("type") is not None:
-                results.append(data)
-
-        if not results:
-            raise HTTPException(status_code=204, detail="No valid tiles found for the provided cells.")
-
-        return JSONResponse(content={
-            "cells": results,
-            "count": len(results)
-        })
+    return JSONResponse(content={
+        "cells": results,
+        "count": len(results)
+    })
