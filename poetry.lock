@@ -1881,19 +1881,17 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "s2geometry"
-version = "0.14.1.dev36+g9864ff722"
+version = "0.14.0"
 description = "Computational geometry and spatial indexing on the sphere"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-files = []
-develop = false
-
-[package.source]
-type = "git"
-url = "https://github.com/google/s2geometry.git"
-reference = "9864ff7"
-resolved_reference = "9864ff7229ed249fbb875e79bc1cd95555867dc8"
+files = [
+    {file = "s2geometry-0.14.0-cp310-abi3-macosx_10_13_x86_64.whl", hash = "sha256:4d676bdafb34b6b224da5af534e8cefe751e6e2d33b2684ebaffbe82e655717a"},
+    {file = "s2geometry-0.14.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:28a884595c971760f94af51560533b136fb7b6827fff3952e6151b8bb102f9d3"},
+    {file = "s2geometry-0.14.0-cp310-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d7797370df5446002629c5014ec525f8f50ce27f039a71dbf6e957ded539bb13"},
+    {file = "s2geometry-0.14.0-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:082141d54b23d7f5faa199db5e87fe3513a4c93ab5f50429894f23de3f705dde"},
+]
 
 [[package]]
 name = "shapely"
@@ -2276,4 +2274,4 @@ standard = ["httptools (>=0.8.0)", "python-dotenv (>=0.13)", "pyyaml (>=5.1)", "
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0.0"
-content-hash = "cab4e1ab2f820fdf7fde74b90043e7b7ed6082993d15b917d0c0eb57d2cffc2b"
+content-hash = "3aa6dc8726909ec519198a8ad43f1c57a9959c5929ee7545272c2d390b076803"

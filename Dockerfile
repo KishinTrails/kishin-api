@@ -6,14 +6,11 @@ RUN groupadd -g 1001 appuser
 RUN useradd --create-home appuser -u 1001 -g 1001
 WORKDIR /app
 
+# Compiler and cmake are for h3, which has no wheel for Python 3.15 yet and is built from source.
+# s2geometry comes as a wheel from PyPI. Remove both packages once h3 publishes a 3.15 wheel.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         cmake \
-        libssl-dev \
-        libgflags-dev \
-        libgoogle-glog-dev \
-        swig \
-        git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry and project dependencies in a layer that is only invalidated
