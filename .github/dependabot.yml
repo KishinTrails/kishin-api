@@ -2,8 +2,7 @@ version: 2
 updates:
   # Python packages in pyproject.toml and poetry.lock. Dependabot reads Poetry projects through
   # the pip ecosystem. Minor and patch updates arrive as one pull request; a major update is
-  # its own pull request. The git dependency s2geometry is pinned to a commit and is not
-  # updated automatically.
+  # its own pull request.
   - package-ecosystem: pip
     directory: /
     schedule:
