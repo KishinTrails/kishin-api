@@ -5,9 +5,11 @@ Main entry point for the Kishin API.
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from kishin_trails.database import engine, Base
@@ -83,6 +85,16 @@ if trails_router:
     app.include_router(trails_router)
 if noise_router:
     app.include_router(noise_router)
+
+# Static page that displays the code Withings appends to its OAuth redirect, so that a
+# program waiting for it (health-sync's first sync) can be given it by hand. Withings checks
+# the redirect address with a HEAD request before accepting it: StaticFiles answers HEAD,
+# a plain @app.get route answers 405.
+app.mount(
+    "/withings",
+    StaticFiles(directory=Path(__file__).parent / "static" / "withings"),
+    name="withings",
+)
 
 
 @app.get("/", summary="Root endpoint")
