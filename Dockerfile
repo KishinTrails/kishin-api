@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # Run as non-root for security best practices.
 # Traefik routes to the container via its published port regardless of user.
