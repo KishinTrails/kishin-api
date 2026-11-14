@@ -1,33 +1,37 @@
 """
 Willpower earning and the Willpower cap multiplier.
 
-The formulas follow the wiki page "Athlete Integration" (§8 and §9). Constants
-the wiki does not fix (the fat axis weight, the decay per missed day, the partial
-adherence bonus) are parameters without defaults.
+The formulas and constants follow the wiki page "Athlete Integration" (§8 and §9).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-from kishin_trails.training_types import TrainingType
-
 BASELINE = 1.0
 GAIN = 0.5
 MULTIPLIER_MIN = 0.0
 MULTIPLIER_MAX = 1.5
 
-FULL_BONUS = 1.5
-NO_BONUS = 1.0
-WILLPOWER_PER_KM = 10
+#: Weight of the fat axis; the muscle axis weighs ``1 - W_FAT``.
+W_FAT = 0.5
 
-#: Highest RPE of each adherence band: (full bonus, partial bonus). Above the
-#: partial bound there is no bonus. The bands start at RPE 3.
-RPE_BANDS = {
-    TrainingType.EXPLORATORY_LONG_RUN: (5, 7),
-    TrainingType.FUNDAMENTAL_RUN: (5, 6),
-}
-LOWEST_BANDED_RPE = 3
+#: Linear decay per day without a fat ratio or muscle mass reading: from 1.0 to
+#: 0.5 in 14 days, to 0 in 28 days.
+DECAY_PER_MISSED_DAY = 0.5 / 14
+
+#: Multiplier on the plan's first day when that day has no reading. It equals
+#: the target multiplier of a reading on that day, whose progress is 0.
+START_MULTIPLIER = BASELINE
+
+#: Willpower cap at a multiplier of 1.0.
+BASE_CAP = 500
+
+#: Moving average weights of the fat ratio and of the muscle mass.
+FAT_ALPHA = 0.30
+MUSCLE_ALPHA = 0.10
+
+WILLPOWER_PER_KM = 10
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -64,7 +68,7 @@ def axisProgress(start: float, current: float, target: float | None) -> float | 
     return clamp((current - start) / (target - start), -1.0, 1.0)
 
 
-def targetMultiplier(fatProgress: float | None, muscleProgress: float | None, wFat: float) -> float:
+def targetMultiplier(fatProgress: float | None, muscleProgress: float | None, wFat: float = W_FAT) -> float:
     """``BASELINE + GAIN × composition``, between 0.5 and 1.5.
 
     ``composition = wFat × fatProgress + (1 - wFat) × muscleProgress``. When one
@@ -85,52 +89,34 @@ def targetMultiplier(fatProgress: float | None, muscleProgress: float | None, wF
     return BASELINE + GAIN * composition
 
 
-def dailyMultipliers(targets: Iterable[float | None], initial: float, decay: float) -> list[float]:
+def dailyMultipliers(
+    targets: Iterable[float | None],
+    initial: float = START_MULTIPLIER,
+    decay: float = DECAY_PER_MISSED_DAY,
+) -> list[float]:
     """Cap multiplier of each day.
 
     Args:
         targets: One entry per day: the target multiplier on a day with a
-            measurement, None on a day without one.
+            reading, None on a day without one.
         initial: The multiplier before the first day.
-        decay: ``DECAY_PER_MISSED_DAY``, in ``[0, 1]``.
+        decay: Amount subtracted on each day without a reading.
 
     Returns:
         One multiplier per day, each clamped to ``[MULTIPLIER_MIN, MULTIPLIER_MAX]``.
     """
-    if not 0 <= decay <= 1:
-        raise ValueError(f"decay must be in [0, 1], got {decay}")
+    if decay < 0:
+        raise ValueError(f"decay must be at least 0, got {decay}")
 
     multipliers: list[float] = []
     previous = initial
     for target in targets:
-        multiplier = target if target is not None else previous * (1 - decay)
+        multiplier = target if target is not None else previous - decay
         previous = clamp(multiplier, MULTIPLIER_MIN, MULTIPLIER_MAX)
         multipliers.append(previous)
     return multipliers
 
 
-def adherenceBonus(trainingType: TrainingType, rpe: int, partialBonus: float) -> float:
-    """Adherence bonus of a run for the RPE the player entered.
-
-    Raises:
-        ValueError: for a training type without RPE bands, or an RPE below 3,
-            which the §8 table does not cover.
-    """
-    if trainingType not in RPE_BANDS:
-        raise ValueError(f"{trainingType.value} earns no Willpower by itself")
-    if not 1 <= rpe <= 10:
-        raise ValueError(f"RPE must be in 1-10, got {rpe}")
-    if rpe < LOWEST_BANDED_RPE:
-        raise ValueError(f"RPE {rpe} is below the bands of the Willpower table")
-
-    fullMax, partialMax = RPE_BANDS[trainingType]
-    if rpe <= fullMax:
-        return FULL_BONUS
-    if rpe <= partialMax:
-        return partialBonus
-    return NO_BONUS
-
-
-def earnedWillpower(distanceKm: float, trainingType: TrainingType, rpe: int, partialBonus: float) -> float:
-    """``Distance_KM × 10 × Adherence_Bonus``."""
-    return distanceKm * WILLPOWER_PER_KM * adherenceBonus(trainingType, rpe, partialBonus)
+def earnedWillpower(distanceKm: float) -> float:
+    """``Distance_KM × 10``."""
+    return distanceKm * WILLPOWER_PER_KM

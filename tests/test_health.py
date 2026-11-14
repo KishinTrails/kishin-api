@@ -8,6 +8,7 @@ no schemas, so the engine maps every schema to none. All rows are made up.
 from __future__ import annotations
 
 import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, insert
@@ -16,6 +17,7 @@ from typer.testing import CliRunner
 
 from kishin_trails import health
 from kishin_trails.cli import app
+from kishin_trails.config import settings
 from kishin_trails.utils import latLngToS2Cell
 
 runner = CliRunner()
@@ -81,6 +83,15 @@ def engine(monkeypatch):
                     sport="cycling",
                 ),
                 _activity(
+                    activity_id="1004",
+                    name="Example Short Run",
+                    start_time=NOW - datetime.timedelta(days=40),
+                    elapsed_time=datetime.time(0, 30, 40),
+                    moving_time=datetime.time(0, 29, 30),
+                    distance=4.0,
+                    sport="running",
+                ),
+                _activity(
                     activity_id="0999",
                     name="Example Old Run",
                     start_time=NOW - datetime.timedelta(days=60),
@@ -122,6 +133,7 @@ def engine(monkeypatch):
         )
 
     monkeypatch.setattr(health, "healthEngine", lambda url, prefix="": sqlite)
+    monkeypatch.setattr(settings, "TIMEZONE", "UTC")
     return sqlite
 
 
@@ -168,6 +180,25 @@ def test_daily_measures_keeps_last_of_day(engine):
     with engine.connect() as conn:
         fat = health.dailyMeasures(conn, health.WITHINGS_TYPES["fat_ratio"])
     assert fat == [(TODAY - datetime.timedelta(days=3), 24.0), (TODAY - datetime.timedelta(days=1), 22.0)]
+
+
+def test_daily_measures_local_day(engine):
+    with engine.begin() as conn:
+        conn.execute(
+            insert(health.measures).values(grpid=10, type=76, measured_at=datetime.datetime(2026, 1, 10, 23, 30), value=36.0)
+        )
+    with engine.connect() as conn:
+        utc = health.dailyMeasures(conn, 76)
+        paris = health.dailyMeasures(conn, 76, tz=ZoneInfo("Europe/Paris"))
+    assert (datetime.date(2026, 1, 10), 36.0) in utc
+    assert (datetime.date(2026, 1, 11), 36.0) in paris
+
+
+def test_cli_unknown_timezone(engine, monkeypatch):
+    monkeypatch.setattr(settings, "TIMEZONE", "Nowhere/Example")
+    result = runner.invoke(app, ["health", "measures"])
+    assert result.exit_code == 1
+    assert "not a known time zone" in result.output
 
 
 def test_cli_without_url(monkeypatch):
@@ -228,10 +259,20 @@ def test_cli_multiplier(engine):
     assert lines[0] == "fat_start: 24.00  muscle_start: 35.00"
     days = [line.split() for line in lines[2:]]
     assert len(days) == 4
-    # Day 3 measured: progress 0, multiplier 1.0. Day 2: decay to 0.9.
-    # Day 1 measured: fat 22, progress (24 - 22) / (24 - 20) = 0.5, target 1.25. Day 0: 1.125.
-    assert [row[-2] for row in days] == ["1.000", "0.900", "1.250", "1.125"]
-    assert days[-1][-1] == "112.5"
+    # Day 3 measured: progress 0, multiplier 1.0. Day 2: 1.0 - 0.1 = 0.9.
+    # Day 1 measured: fat 22, progress (24 - 22) / (24 - 20) = 0.5, target 1.25. Day 0: 1.15.
+    assert [row[-2] for row in days] == ["1.000", "0.900", "1.250", "1.150"]
+    assert days[-1][-1] == "115.0"
+
+
+def test_cli_multiplier_defaults(engine):
+    start = (TODAY - datetime.timedelta(days=3)).isoformat()
+    result = runner.invoke(app, ["health", "multiplier", "--start", start, "--end", TODAY.isoformat()])
+    assert result.exit_code == 0, result.output
+    days = [line.split() for line in result.output.splitlines()[2:]]
+    # No targets: the target multiplier is 1.0. Day 2 decays by 0.5 / 14; the cap is 500 × multiplier.
+    assert [row[-2] for row in days] == ["1.000", "0.964", "1.000", "0.964"]
+    assert days[0][-1] == "500.0"
 
 
 def test_cli_multiplier_needs_fat_start(engine):
@@ -245,32 +286,20 @@ def test_cli_multiplier_needs_fat_start(engine):
 
 
 def test_cli_willpower_long_run(engine):
-    result = runner.invoke(
-        app,
-        [
-            "health", "willpower", "1002",
-            "--type", "long", "--rpe", "6", "--partial-bonus", "1.2", "--target-km", "15",
-        ],
-    )
+    result = runner.invoke(app, ["health", "willpower", "1002", "--type", "long", "--target-km", "15"])
     assert result.exit_code == 0, result.output
-    assert "adherence bonus: 1.2" in result.output
-    assert "willpower: 168.0" in result.output
-    assert "complete: True" in result.output
+    assert "willpower: 140.0" in result.output
+    assert "target: 15.00 km  complete: True" in result.output
 
 
 def test_cli_willpower_fundamental_run(engine):
-    result = runner.invoke(
-        app,
-        ["health", "willpower", "1001", "--type", "fundamental", "--rpe", "4", "--partial-bonus", "1.2"],
-    )
+    result = runner.invoke(app, ["health", "willpower", "1001", "--type", "fundamental"])
     assert result.exit_code == 0, result.output
-    assert "willpower: 90.0" in result.output
-    assert "elapsed time: 0:32:10  complete: True" in result.output
+    assert "willpower: 60.0" in result.output
+    assert "moving time: 0:31:00  complete: True" in result.output
 
 
-def test_cli_willpower_rpe_below_bands(engine):
-    result = runner.invoke(
-        app,
-        ["health", "willpower", "1001", "--type", "fundamental", "--rpe", "2", "--partial-bonus", "1.2"],
-    )
-    assert result.exit_code == 1
+def test_cli_willpower_fundamental_run_counts_moving_time(engine):
+    result = runner.invoke(app, ["health", "willpower", "1004", "--type", "fundamental"])
+    assert result.exit_code == 0, result.output
+    assert "moving time: 0:29:30  complete: False" in result.output

@@ -5,11 +5,12 @@ Willpower formulas on it. Nothing here writes to any database.
     kishin health activities --days 30 --sport running
     kishin health cells 12345678901
     kishin health measures --days 90
-    kishin health multiplier --start 2026-01-05 --fat-target 20 --muscle-target 40 --w-fat 0.5 --decay 0.05
-    kishin health willpower 12345678901 --type long --rpe 4 --partial-bonus 1.25 --target-km 15
+    kishin health multiplier --start 2026-01-05 --fat-target 20 --muscle-target 40
+    kishin health willpower 12345678901 --type long --target-km 15
 
 The database URL comes from ``HEALTH_DATABASE_URL`` (environment, ``.env`` or
-``/run/secrets/HEALTH_DATABASE_URL``).
+``/run/secrets/HEALTH_DATABASE_URL``). Withings readings are grouped by calendar
+day in the ``TIMEZONE`` setting.
 """
 
 from __future__ import annotations
@@ -19,16 +20,20 @@ import enum
 from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import typer
 from sqlalchemy.engine import Connection
 
 from kishin_trails import health
 from kishin_trails.config import settings
-from kishin_trails.training_types import TrainingType
 from kishin_trails.willpower import (
-    BASELINE,
-    adherenceBonus,
+    BASE_CAP,
+    DECAY_PER_MISSED_DAY,
+    FAT_ALPHA,
+    MUSCLE_ALPHA,
+    START_MULTIPLIER,
+    W_FAT,
     axisProgress,
     dailyMultipliers,
     earnedWillpower,
@@ -43,21 +48,29 @@ app = typer.Typer(help="Read health-sync data and compute the Willpower formulas
 #: Fraction of a distance target that completes a distance-based run (§6).
 DISTANCE_COMPLETION_RATIO = 0.9
 
-#: Duration of the fundamental run, in seconds.
+#: Moving time that completes the fundamental run, in seconds (§6).
 FUNDAMENTAL_RUN_SEC = 30 * 60
 
 
 class RunType(str, enum.Enum):
-    """Run types that earn Willpower."""
+    """Runs, which differ in how completion is checked."""
 
     LONG = "long"
     FUNDAMENTAL = "fundamental"
 
 
-RUN_TRAINING_TYPES = {
-    RunType.LONG: TrainingType.EXPLORATORY_LONG_RUN,
-    RunType.FUNDAMENTAL: TrainingType.FUNDAMENTAL_RUN,
-}
+def localZone() -> ZoneInfo:
+    """The ``TIMEZONE`` setting, or exits with an error."""
+    try:
+        return ZoneInfo(settings.TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        fail(f"TIMEZONE {settings.TIMEZONE!r} is not a known time zone.")
+        raise
+
+
+def localToday() -> datetime.date:
+    """Today in the ``TIMEZONE`` setting."""
+    return datetime.datetime.now(localZone()).date()
 
 
 def connect() -> Connection:
@@ -118,9 +131,10 @@ class Series:
 
 def loadSeries(fatAlpha: float, muscleAlpha: float) -> tuple[Series, Series]:
     """The fat ratio and muscle mass series, over every measurement in the database."""
+    zone = localZone()
     with connect() as conn:
-        fat = health.dailyMeasures(conn, health.WITHINGS_TYPES["fat_ratio"])
-        muscle = health.dailyMeasures(conn, health.WITHINGS_TYPES["muscle_mass"])
+        fat = health.dailyMeasures(conn, health.WITHINGS_TYPES["fat_ratio"], tz=zone)
+        muscle = health.dailyMeasures(conn, health.WITHINGS_TYPES["muscle_mass"], tz=zone)
     try:
         return Series.fromDaily(fat, fatAlpha), Series.fromDaily(muscle, muscleAlpha)
     except ValueError as error:
@@ -175,26 +189,25 @@ class Composition:
 
 
 def printMultipliers(
-    composition: Composition, days: list[datetime.date], multipliers: list[float], baseCap: float | None
+    composition: Composition, days: list[datetime.date], multipliers: list[float], baseCap: float
 ) -> None:
     """Prints one line per day of the ``multiplier`` command."""
     typer.echo(
         f"fat_start: {formatNumber(composition.fatStart)}  muscle_start: {formatNumber(composition.muscleStart)}"
     )
     header = (
-        f"{'day (UTC)':<10}  {'m':<1}  {'fat ema':>7}  {'mus ema':>7}  {'fat prog':>8}  {'mus prog':>8}  "
-        f"{'target':>6}  {'mult':>6}"
+        f"{'day':<10}  {'m':<1}  {'fat ema':>7}  {'mus ema':>7}  {'fat prog':>8}  {'mus prog':>8}  "
+        f"{'target':>6}  {'mult':>6}  {'cap':>8}"
     )
-    typer.echo(header + (f"  {'cap':>8}" if baseCap is not None else ""))
+    typer.echo(header)
     for day, value in zip(days, multipliers):
         line = (
             f"{day.isoformat():<10}  {'*' if composition.measured(day) else ' '}  "
             f"{formatNumber(composition.fat.averageOn(day)):>7}  {formatNumber(composition.muscle.averageOn(day)):>7}  "
             f"{formatNumber(composition.fatProgress(day), 3):>8}  {formatNumber(composition.muscleProgress(day), 3):>8}  "
-            f"{formatNumber(composition.target(day), 3):>6}  {formatNumber(value, 3):>6}"
+            f"{formatNumber(composition.target(day), 3):>6}  {formatNumber(value, 3):>6}  "
+            f"{formatNumber(baseCap * value, 1):>8}"
         )
-        if baseCap is not None:
-            line += f"  {formatNumber(baseCap * value, 1):>8}"
         typer.echo(line)
 
 
@@ -249,8 +262,8 @@ def cells(
 @app.command("measures")
 def listMeasures(
     days: Annotated[int, typer.Option("--days", help="How many days back to show")] = 90,
-    fatAlpha: Annotated[float, typer.Option("--fat-alpha", help="EMA alpha of the fat ratio")] = 0.30,
-    muscleAlpha: Annotated[float, typer.Option("--muscle-alpha", help="EMA alpha of the muscle mass")] = 0.10,
+    fatAlpha: Annotated[float, typer.Option("--fat-alpha", help="EMA alpha of the fat ratio")] = FAT_ALPHA,
+    muscleAlpha: Annotated[float, typer.Option("--muscle-alpha", help="EMA alpha of the muscle mass")] = MUSCLE_ALPHA,
 ) -> None:
     """Show fat ratio and muscle mass per day, with their moving averages.
 
@@ -259,13 +272,13 @@ def listMeasures(
     """
     fat, muscle = loadSeries(fatAlpha, muscleAlpha)
 
-    first = datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=days)
+    first = localToday() - datetime.timedelta(days=days)
     shown = sorted(day for day in set(fat.days) | set(muscle.days) if day >= first)
     if not shown:
         typer.echo("No measurements.")
         return
 
-    typer.echo(f"{'day (UTC)':<10}  {'fat %':>6}  {'fat ema':>7}  {'muscle':>6}  {'mus ema':>7}")
+    typer.echo(f"{'day':<10}  {'fat %':>6}  {'fat ema':>7}  {'muscle':>6}  {'mus ema':>7}")
     for day in shown:
         typer.echo(
             f"{day.isoformat():<10}  {formatNumber(fat.valueOf(day)):>6}  {formatNumber(fat.averageOn(day)):>7}  "
@@ -277,25 +290,25 @@ def listMeasures(
 def multiplier(
     *,
     start: Annotated[datetime.datetime, typer.Option("--start", formats=["%Y-%m-%d"], help="First day of the plan")],
-    wFat: Annotated[float, typer.Option("--w-fat", help="W_FAT; W_MUSCLE is 1 - W_FAT")],
-    decay: Annotated[float, typer.Option("--decay", help="DECAY_PER_MISSED_DAY, for example 0.05")],
+    wFat: Annotated[float, typer.Option("--w-fat", help="W_FAT; W_MUSCLE is 1 - W_FAT")] = W_FAT,
+    decay: Annotated[float, typer.Option("--decay", help="DECAY_PER_MISSED_DAY")] = DECAY_PER_MISSED_DAY,
     fatTarget: Annotated[float | None, typer.Option("--fat-target", help="Target fat ratio in %")] = None,
     muscleTarget: Annotated[float | None, typer.Option("--muscle-target", help="Target muscle mass in kg")] = None,
     end: Annotated[
-        datetime.datetime | None, typer.Option("--end", formats=["%Y-%m-%d"], help="Last day; default today (UTC)")
+        datetime.datetime | None, typer.Option("--end", formats=["%Y-%m-%d"], help="Last day; default today in TIMEZONE")
     ] = None,
-    baseCap: Annotated[float | None, typer.Option("--base-cap", help="Base_Cap, to print the Willpower cap")] = None,
-    fatAlpha: Annotated[float, typer.Option("--fat-alpha", help="EMA alpha of the fat ratio")] = 0.30,
-    muscleAlpha: Annotated[float, typer.Option("--muscle-alpha", help="EMA alpha of the muscle mass")] = 0.10,
+    baseCap: Annotated[float, typer.Option("--base-cap", help="Base_Cap, the cap at a multiplier of 1.0")] = BASE_CAP,
+    fatAlpha: Annotated[float, typer.Option("--fat-alpha", help="EMA alpha of the fat ratio")] = FAT_ALPHA,
+    muscleAlpha: Annotated[float, typer.Option("--muscle-alpha", help="EMA alpha of the muscle mass")] = MUSCLE_ALPHA,
 ) -> None:
     """Compute the Willpower cap multiplier day by day from the plan start.
 
     fat_start and muscle_start are the moving averages on the start day. A day
     counts as measured when it has a fat ratio or a muscle mass. Before the first
-    day the multiplier is BASELINE (1.0).
+    day the multiplier is START_MULTIPLIER (1.0).
     """
     firstDay = start.date()
-    lastDay = end.date() if end else datetime.datetime.now(datetime.UTC).date()
+    lastDay = end.date() if end else localToday()
     if lastDay < firstDay:
         fail("--end is before --start.")
 
@@ -303,7 +316,7 @@ def multiplier(
     days = [firstDay + datetime.timedelta(days=offset) for offset in range((lastDay - firstDay).days + 1)]
     try:
         multipliers = dailyMultipliers(
-            [composition.target(day) if composition.measured(day) else None for day in days], BASELINE, decay
+            [composition.target(day) if composition.measured(day) else None for day in days], START_MULTIPLIER, decay
         )
     except ValueError as error:
         fail(str(error))
@@ -316,8 +329,6 @@ def multiplier(
 def willpower(
     activityId: Annotated[str, typer.Argument(help="GarminDB activity_id")],
     runType: Annotated[RunType, typer.Option("--type", help="Which training the activity completes")],
-    rpe: Annotated[int, typer.Option("--rpe", min=1, max=10, help="RPE entered by the player")],
-    partialBonus: Annotated[float, typer.Option("--partial-bonus", help="Adherence bonus of the partial band")],
     targetKm: Annotated[float | None, typer.Option("--target-km", help="Long run target, to check completion")] = None,
 ) -> None:
     """Compute the Willpower an activity earns, and whether it completes the training."""
@@ -328,22 +339,13 @@ def willpower(
         fail(f"Activity {activityId} has no distance.")
         raise typer.Exit(code=1)
 
-    trainingType = RUN_TRAINING_TYPES[runType]
-    try:
-        bonus = adherenceBonus(trainingType, rpe, partialBonus)
-        earned = earnedWillpower(activity.distance_km, trainingType, rpe, partialBonus)
-    except ValueError as error:
-        fail(str(error))
-        raise
-
     typer.echo(f"distance: {activity.distance_km:.2f} km")
-    typer.echo(f"adherence bonus: {bonus}")
-    typer.echo(f"willpower: {earned:.1f}")
+    typer.echo(f"willpower: {earnedWillpower(activity.distance_km):.1f}")
 
     if runType is RunType.FUNDAMENTAL:
-        duration = activity.elapsed_sec
-        complete = duration is not None and duration >= FUNDAMENTAL_RUN_SEC
-        typer.echo(f"elapsed time: {formatDuration(duration)}  complete: {complete}")
+        moving = activity.moving_sec
+        complete = moving is not None and moving >= FUNDAMENTAL_RUN_SEC
+        typer.echo(f"moving time: {formatDuration(moving)}  complete: {complete}")
     elif targetKm is not None:
         complete = activity.distance_km >= targetKm * DISTANCE_COMPLETION_RATIO
         typer.echo(f"target: {targetKm:.2f} km  complete: {complete}")

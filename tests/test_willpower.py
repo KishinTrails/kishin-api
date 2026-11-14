@@ -4,9 +4,8 @@ Tests for the Willpower formulas in kishin_trails.willpower.
 
 import pytest
 
-from kishin_trails.training_types import TrainingType
 from kishin_trails.willpower import (
-    adherenceBonus,
+    DECAY_PER_MISSED_DAY,
     axisProgress,
     dailyMultipliers,
     earnedWillpower,
@@ -75,6 +74,10 @@ def test_target_multiplier(fat, muscle, expected):
     assert targetMultiplier(fat, muscle, wFat=0.3) == pytest.approx(expected)
 
 
+def test_target_multiplier_default_weight():
+    assert targetMultiplier(1.0, 0.0) == pytest.approx(1.25)
+
+
 def test_target_multiplier_rejects_weight():
     with pytest.raises(ValueError):
         targetMultiplier(0.0, 0.0, wFat=1.5)
@@ -82,15 +85,15 @@ def test_target_multiplier_rejects_weight():
 
 def test_daily_multipliers_decay_and_restore():
     result = dailyMultipliers([1.2, None, None, 1.3], initial=1.0, decay=0.1)
-    assert result == pytest.approx([1.2, 1.08, 0.972, 1.3])
+    assert result == pytest.approx([1.2, 1.1, 1.0, 1.3])
 
 
 def test_daily_multipliers_start_from_initial():
-    assert dailyMultipliers([None], initial=1.0, decay=0.5) == [0.5]
+    assert dailyMultipliers([None], initial=1.0, decay=0.25) == [0.75]
 
 
-def test_daily_multipliers_decay_to_zero():
-    assert dailyMultipliers([None, None], initial=1.0, decay=1.0) == [0.0, 0.0]
+def test_daily_multipliers_reach_zero():
+    assert dailyMultipliers([None, None, None], initial=0.5, decay=0.2) == pytest.approx([0.3, 0.1, 0.0])
 
 
 def test_daily_multipliers_clamped():
@@ -99,38 +102,21 @@ def test_daily_multipliers_clamped():
 
 def test_daily_multipliers_rejects_decay():
     with pytest.raises(ValueError):
-        dailyMultipliers([None], initial=1.0, decay=1.5)
+        dailyMultipliers([None], initial=1.0, decay=-0.1)
 
 
-@pytest.mark.parametrize(
-    ("trainingType", "rpe", "expected"),
-    [
-        (TrainingType.EXPLORATORY_LONG_RUN, 3, 1.5),
-        (TrainingType.EXPLORATORY_LONG_RUN, 5, 1.5),
-        (TrainingType.EXPLORATORY_LONG_RUN, 6, 1.2),
-        (TrainingType.EXPLORATORY_LONG_RUN, 7, 1.2),
-        (TrainingType.EXPLORATORY_LONG_RUN, 8, 1.0),
-        (TrainingType.FUNDAMENTAL_RUN, 5, 1.5),
-        (TrainingType.FUNDAMENTAL_RUN, 6, 1.2),
-        (TrainingType.FUNDAMENTAL_RUN, 7, 1.0),
-        (TrainingType.FUNDAMENTAL_RUN, 10, 1.0),
-    ],
-)
-def test_adherence_bonus(trainingType, rpe, expected):
-    assert adherenceBonus(trainingType, rpe, partialBonus=1.2) == expected
+def test_default_decay_halves_in_14_days():
+    result = dailyMultipliers([None] * 28)
+    assert result[13] == pytest.approx(0.5)
+    assert result[27] == pytest.approx(0.0)
 
 
-@pytest.mark.parametrize("rpe", [0, 1, 2, 11])
-def test_adherence_bonus_rejects_rpe(rpe):
-    with pytest.raises(ValueError):
-        adherenceBonus(TrainingType.EXPLORATORY_LONG_RUN, rpe, partialBonus=1.2)
-
-
-def test_adherence_bonus_rejects_tick_item():
-    with pytest.raises(ValueError):
-        adherenceBonus(TrainingType.YOGA, 4, partialBonus=1.2)
+def test_default_decay_empties_full_multiplier_in_42_days():
+    result = dailyMultipliers([None] * 42, initial=1.5)
+    assert result[40] == pytest.approx(DECAY_PER_MISSED_DAY)
+    assert result[41] == pytest.approx(0.0)
 
 
 def test_earned_willpower():
-    assert earnedWillpower(12.0, TrainingType.EXPLORATORY_LONG_RUN, 4, partialBonus=1.2) == pytest.approx(180.0)
-    assert earnedWillpower(6.0, TrainingType.FUNDAMENTAL_RUN, 8, partialBonus=1.2) == pytest.approx(60.0)
+    assert earnedWillpower(12.0) == pytest.approx(120.0)
+    assert earnedWillpower(0.0) == 0.0

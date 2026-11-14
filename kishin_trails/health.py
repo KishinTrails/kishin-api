@@ -210,10 +210,16 @@ def activityCells(conn: Connection, activityId: str, level: int = 16) -> list[st
     return list(cells)
 
 
-def dailyMeasures(conn: Connection,
-                  typeCode: int,
-                  since: datetime.datetime | None = None) -> list[tuple[datetime.date, float]]:
-    """The last measurement of each UTC day for one Withings type, oldest first."""
+def dailyMeasures(
+    conn: Connection,
+    typeCode: int,
+    since: datetime.datetime | None = None,
+    tz: datetime.tzinfo = datetime.UTC,
+) -> list[tuple[datetime.date, float]]:
+    """The last measurement of each calendar day in ``tz`` for one Withings type, oldest first.
+
+    ``measured_at`` is stored as naive UTC; ``since`` is compared with it as is.
+    """
     query = select(measures.c.measured_at, measures.c.value).where(measures.c.type == typeCode)
     if since is not None:
         query = query.where(measures.c.measured_at >= since)
@@ -221,5 +227,5 @@ def dailyMeasures(conn: Connection,
 
     byDay: dict[datetime.date, float] = {}
     for measuredAt, value in conn.execute(query):
-        byDay[measuredAt.date()] = value
+        byDay[measuredAt.replace(tzinfo=datetime.UTC).astimezone(tz).date()] = value
     return list(byDay.items())

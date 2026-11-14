@@ -23,6 +23,7 @@ class Settings(BaseSettings):
         DEBUG_LOCATIONS: Dictionary of debug locations (loaded from .env, not committed).
         HEALTH_DATABASE_URL: SQLAlchemy URL of the health-sync measurement database (read-only account).
         HEALTH_DB_PREFIX: Prefix of the health-sync schema names (health-sync's HEALTH_DB_PREFIX).
+        TIMEZONE: IANA time zone that decides the calendar day of a Withings reading.
     """
 
     DATABASE_URL: str = "sqlite:///./kishin.db"
@@ -56,6 +57,10 @@ class Settings(BaseSettings):
     # postgresql+psycopg:// selects the psycopg 3 driver.
     HEALTH_DATABASE_URL: str = ""
     HEALTH_DB_PREFIX: str = ""
+
+    # IANA time zone, such as Europe/Paris, that decides the calendar day of a
+    # Withings reading.
+    TIMEZONE: str = "UTC"
 
     # Load from .env file if it exists. secrets_dir lets SECRET_KEY (or any
     # field) come from a mounted file instead — e.g. a Docker secret at
