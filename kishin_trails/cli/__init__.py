@@ -37,6 +37,11 @@ The Perlin noise fog-of-war gate:
     kishin noise cell 89c25a221
     kishin noise search --config scripts/perlin_config_s2.json
 
+Training plans, imported from a local JSON file:
+
+    kishin plan import plan.json --user alice --start 2026-11-16
+    kishin plan show
+
 Reading the health-sync measurement database (read-only):
 
     kishin health activities --days 30
@@ -57,7 +62,7 @@ import typer
 
 from kishin_trails.config import settings
 
-from . import cache, db, geo, gpx, health, noise, user
+from . import cache, db, geo, gpx, health, noise, plan, user
 from .common import fail
 
 app = typer.Typer(help="Kishin Trails administration.", no_args_is_help=True)
@@ -68,6 +73,7 @@ app.add_typer(cache.app, name="cache")
 app.add_typer(geo.app, name="geo")
 app.add_typer(noise.app, name="noise")
 app.add_typer(health.app, name="health")
+app.add_typer(plan.app, name="plan")
 
 
 @app.command("run")

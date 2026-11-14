@@ -7,7 +7,7 @@ Provides request/response models for the API endpoints.
 import datetime
 from typing import List, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserBase(BaseModel):
@@ -337,3 +337,97 @@ class MeasureDayOut(BaseModel):
     fat_free_mass_kg: float | None
     bone_mass_kg: float | None
     hydration_kg: float | None
+
+
+# ---------------------------------------------------------------------------
+# Training plan progression
+# ---------------------------------------------------------------------------
+
+
+class PlanSegmentOut(BaseModel):
+    """One segment of a planned run."""
+
+    position: int
+    type: str
+    duration_sec: int | None
+    distance_km: float | None
+    rpe_min: int | None
+    rpe_max: int | None
+    pace_min_km: float | None
+
+
+class CompletionActivityOut(BaseModel):
+    """The Garmin activity that completed a run; None fields when the health database is unavailable."""
+
+    activity_id: str
+    name: str | None
+    start_time: datetime.datetime | None
+    distance_km: float | None
+    moving_sec: int | None
+
+
+class CompletionOut(BaseModel):
+    """That a training is done; runs carry the activity and the RPE."""
+
+    completed_at: datetime.datetime
+    rpe: int | None
+    activity: CompletionActivityOut | None
+
+
+class PlanTrainingOut(BaseModel):
+    """One training of a week, with its targets and its completion."""
+
+    id: int
+    position: int
+    type: str
+    is_tick: bool
+    target_distance_km: float | None
+    target_duration_sec: int | None
+    segments: List[PlanSegmentOut]
+    completion: CompletionOut | None
+
+
+class WeekRunningOut(BaseModel):
+    """What Garmin recorded as running in one plan week."""
+
+    run_count: int
+    run_km: float
+    longest_run_km: float | None
+
+
+class PlanWeekOut(BaseModel):
+    """One week of the plan, Monday to Sunday."""
+
+    week_number: int
+    phase: str
+    start: datetime.date
+    end: datetime.date
+    trainings: List[PlanTrainingOut]
+    running: WeekRunningOut | None
+
+
+class PlanOut(BaseModel):
+    """The active plan and its progression.
+
+    ``current_week`` is the week containing today in ``TIMEZONE``; it is below 1
+    before the plan starts and above ``week_count`` after it ends.
+    ``health_available`` is False when the Garmin parts could not be read.
+    """
+
+    plan_id: int
+    name: str
+    goal_type: str | None
+    target_fat_ratio: float | None
+    target_muscle_mass_kg: float | None
+    start_date: datetime.date
+    current_week: int
+    week_count: int
+    health_available: bool
+    weeks: List[PlanWeekOut]
+
+
+class CompleteTrainingIn(BaseModel):
+    """Body of a completion: a Garmin activity and an RPE for a run, nothing for a tick item."""
+
+    activity_id: str | None = None
+    rpe: int | None = Field(default=None, ge=1, le=10)

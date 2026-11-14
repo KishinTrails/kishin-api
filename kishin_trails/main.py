@@ -18,6 +18,7 @@ from kishin_trails.poi import router as poi_router
 from kishin_trails.trails import router as trails_router
 from kishin_trails.noise import router as noise_router
 from kishin_trails.athlete import router as athlete_router
+from kishin_trails.plan import router as plan_router
 from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.dependencies import getCurrentUser
 from kishin_trails.models import User
@@ -87,6 +88,7 @@ if trails_router:
 if noise_router:
     app.include_router(noise_router)
 app.include_router(athlete_router)
+app.include_router(plan_router)
 
 # Static page that displays the code Withings appends to its OAuth redirect, so that a
 # program waiting for it (health-sync's first sync) can be given it by hand. Withings checks

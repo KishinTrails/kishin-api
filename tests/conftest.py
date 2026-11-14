@@ -192,6 +192,7 @@ def health_engine(monkeypatch):
     from kishin_trails import health
     from kishin_trails.athlete import getHealthConnection
     from kishin_trails.config import settings
+    from kishin_trails.plan import optionalHealthConnection
 
     sqlite = buildHealthEngine()
 
@@ -202,5 +203,7 @@ def health_engine(monkeypatch):
     monkeypatch.setattr(health, "healthEngine", lambda url, prefix="": sqlite)
     monkeypatch.setattr(settings, "TIMEZONE", "UTC")
     app.dependency_overrides[getHealthConnection] = override_health_connection
+    app.dependency_overrides[optionalHealthConnection] = override_health_connection
     yield sqlite
     app.dependency_overrides.pop(getHealthConnection, None)
+    app.dependency_overrides.pop(optionalHealthConnection, None)

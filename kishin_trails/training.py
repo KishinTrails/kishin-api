@@ -4,18 +4,21 @@ SQLAlchemy models for training plans.
 A Segment is one effort block of a run. A Training is one item of a week: a run
 made of segments, or an item the player ticks. A PlanWeek gives a week its phase.
 A Plan is an ordered list of weeks and trainings. UserActivePlan records which
-plan a user follows and since when.
+plan a user follows and since when. A TrainingCompletion records that a training
+is done: a run with the Garmin activity and RPE that completed it, a tick item
+alone.
 
-Neither the server nor the ``kishin`` CLI imports this module, so neither
-creates these tables. The enums are in ``training_types.py``.
+``main.py`` and the ``kishin db init`` command import this module, so
+``Base.metadata.create_all`` creates these tables. The enums are in
+``training_types.py``.
 """
 
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kishin_trails.database import Base
@@ -117,6 +120,12 @@ class Training(Base):
         cascade="all, delete-orphan",
         order_by="Segment.position",
     )
+    completion: Mapped[TrainingCompletion | None] = relationship(
+        "TrainingCompletion",
+        back_populates="training",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     __table_args__ = (
         UniqueConstraint("plan_id", "week_number", "position", name="uix_training_week_position"),
@@ -192,6 +201,34 @@ class Segment(Base):
             name="ck_segment_rpe_order",
         ),
     )
+
+
+class TrainingCompletion(Base):
+    """That a training is done.
+
+    A run carries the Garmin activity that completed it and the RPE the player
+    entered; a tick item carries neither. ``activity_id`` points into the
+    health-sync database, so it has no foreign key.
+
+    Attributes:
+        id: Primary key.
+        training_id: The training; completed at most once.
+        completed_at: When the player marked it done (UTC).
+        activity_id: GarminDB activity id, or None for a tick item. Completes at most one training.
+        rpe: RPE entered by the player (1-10), or None for a tick item.
+    """
+
+    __tablename__ = "training_completions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    training_id: Mapped[int] = mapped_column(Integer, ForeignKey("trainings.id"), nullable=False, unique=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    activity_id: Mapped[str | None] = mapped_column(String, unique=True)
+    rpe: Mapped[int | None] = mapped_column(Integer)
+
+    training: Mapped[Training] = relationship("Training", back_populates="completion")
+
+    __table_args__ = (CheckConstraint("rpe IS NULL OR rpe BETWEEN 1 AND 10", name="ck_completion_rpe"),)
 
 
 class UserActivePlan(Base):

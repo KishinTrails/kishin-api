@@ -14,6 +14,7 @@ from sqlalchemy import func, select, text
 from kishin_trails import database
 from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.models import POI, NoiseCache, PostProcessingPoI, Tile, User
+from kishin_trails.training import Plan, TrainingCompletion
 
 from .common import openSession
 
@@ -39,6 +40,8 @@ def stats() -> None:
             "pois": session.scalar(select(func.count()).select_from(POI)),  # pylint: disable=not-callable
             "post-processing pois": session.scalar(select(func.count()).select_from(PostProcessingPoI)),  # pylint: disable=not-callable
             "noise cache entries": session.scalar(select(func.count()).select_from(NoiseCache)),  # pylint: disable=not-callable
+            "plans": session.scalar(select(func.count()).select_from(Plan)),  # pylint: disable=not-callable
+            "training completions": session.scalar(select(func.count()).select_from(TrainingCompletion)),  # pylint: disable=not-callable
         }
 
         width = max(len(name) for name in counts)
