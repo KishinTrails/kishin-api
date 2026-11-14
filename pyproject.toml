@@ -24,7 +24,8 @@ dependencies = [
     "typer>=0.27.2,<1.0.0",
     # Used by kishin_trails.populate and kishin_trails.perlin_search, both
     # reachable from the `kishin` console script installed by `--only main`.
-    "tqdm>=4.67.3,<5.0.0"
+    "tqdm>=4.67.3,<5.0.0",
+    "psycopg[binary] (>=3.2,<4.0)"
 ]
 
 [project.scripts]
