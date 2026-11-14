@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import datetime
 import enum
-from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Annotated
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 import typer
 from sqlalchemy.engine import Connection
 
 from kishin_trails import health
+from kishin_trails.health import Series
 from kishin_trails.config import settings
 from kishin_trails.willpower import (
     BASE_CAP,
@@ -34,10 +34,8 @@ from kishin_trails.willpower import (
     MUSCLE_ALPHA,
     START_MULTIPLIER,
     W_FAT,
-    axisProgress,
     dailyMultipliers,
     earnedWillpower,
-    ema,
     targetMultiplier,
 )
 
@@ -62,9 +60,9 @@ class RunType(str, enum.Enum):
 def localZone() -> ZoneInfo:
     """The ``TIMEZONE`` setting, or exits with an error."""
     try:
-        return ZoneInfo(settings.TIMEZONE)
-    except (ZoneInfoNotFoundError, ValueError):
-        fail(f"TIMEZONE {settings.TIMEZONE!r} is not a known time zone.")
+        return health.localZone()
+    except ValueError as error:
+        fail(str(error))
         raise
 
 
@@ -95,38 +93,6 @@ def formatDuration(seconds: int | None) -> str:
 def formatNumber(value: float | None, digits: int = 2) -> str:
     """``value`` with ``digits`` decimals, or ``-``."""
     return "-" if value is None else f"{value:.{digits}f}"
-
-
-@dataclass(frozen=True)
-class Series:
-    """The daily values of one Withings measure type and their moving average."""
-
-    days: list[datetime.date]
-    values: list[float]
-    averages: list[float]
-
-    @classmethod
-    def fromDaily(cls, daily: list[tuple[datetime.date, float]], alpha: float) -> Series:
-        """Builds a series from ``health.dailyMeasures`` output."""
-        values = [value for _, value in daily]
-        return cls([day for day, _ in daily], values, ema(values, alpha))
-
-    def valueOf(self, day: datetime.date) -> float | None:
-        """The measurement of ``day``, or None."""
-        index = bisect_right(self.days, day)
-        return self.values[index - 1] if index and self.days[index - 1] == day else None
-
-    def averageOn(self, day: datetime.date) -> float | None:
-        """The moving average at the last measurement on or before ``day``."""
-        index = bisect_right(self.days, day)
-        return self.averages[index - 1] if index else None
-
-    def progressOn(self, day: datetime.date, start: float | None, target: float | None) -> float | None:
-        """``axisProgress`` of the moving average on ``day``."""
-        current = self.averageOn(day)
-        if start is None or current is None:
-            return None
-        return axisProgress(start, current, target)
 
 
 def loadSeries(fatAlpha: float, muscleAlpha: float) -> tuple[Series, Series]:
@@ -240,7 +206,7 @@ def listActivities(
         typer.echo(
             f"{start:<19}  {activity.activity_id:<14}  {activity.sport or '-':<12}  "
             f"{formatNumber(activity.distance_km):>7}  {formatDuration(activity.moving_sec):>8}  "
-            f"{formatNumber(activity.ascent, 0):>6}"
+            f"{formatNumber(activity.ascent_m, 0):>6}"
         )
 
 

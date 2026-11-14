@@ -179,3 +179,28 @@ def mock_cell_activity(mocker):
 
     mocker.patch("kishin_trails.cache.isCellActive", side_effect=mock_is_cell_active)
     return configure_mock
+
+
+@pytest.fixture(scope="function")
+def health_engine(monkeypatch):
+    """The made-up health-sync database of tests/healthdata.py.
+
+    The CLI reaches it through ``health.healthEngine`` and the API through the
+    ``getHealthConnection`` dependency; both are replaced. Days are in UTC.
+    """
+    from healthdata import buildHealthEngine
+    from kishin_trails import health
+    from kishin_trails.athlete import getHealthConnection
+    from kishin_trails.config import settings
+
+    sqlite = buildHealthEngine()
+
+    def override_health_connection():
+        with sqlite.connect() as conn:
+            yield conn
+
+    monkeypatch.setattr(health, "healthEngine", lambda url, prefix="": sqlite)
+    monkeypatch.setattr(settings, "TIMEZONE", "UTC")
+    app.dependency_overrides[getHealthConnection] = override_health_connection
+    yield sqlite
+    app.dependency_overrides.pop(getHealthConnection, None)

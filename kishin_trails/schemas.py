@@ -4,7 +4,8 @@ Pydantic schemas for data validation and serialisation.
 Provides request/response models for the API endpoints.
 """
 
-from typing import List
+import datetime
+from typing import List, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -150,3 +151,189 @@ class AddExploredTilesResult(BaseModel):
 
     added: List[str]
     skipped: List[SkippedCell]
+
+
+# ---------------------------------------------------------------------------
+# Athlete data (read-only, from the health-sync database)
+#
+# Units are metric. GarminDB times are device-local and carry no time zone.
+# ---------------------------------------------------------------------------
+
+
+class ActivitySummaryOut(BaseModel):
+    """One Garmin activity in a list.
+
+    ``avg_speed_kmh`` is distance over moving time when Garmin gives no speed.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    activity_id: str
+    name: str | None
+    sport: str | None
+    sub_sport: str | None
+    start_time: datetime.datetime | None
+    stop_time: datetime.datetime | None
+    elapsed_sec: int | None
+    moving_sec: int | None
+    distance_km: float | None
+    ascent_m: float | None
+    descent_m: float | None
+    avg_hr: int | None
+    max_hr: int | None
+    calories: int | None
+    avg_speed_kmh: float | None
+    training_effect: float | None
+    anaerobic_training_effect: float | None
+
+
+class DailyActivitiesOut(BaseModel):
+    """Totals of the activities started on one device-local day."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    date: datetime.date
+    count: int
+    distance_km: float
+    moving_sec: int
+    elapsed_sec: int
+    ascent_m: float
+
+
+class HrZoneOut(BaseModel):
+    """Time spent in one heart rate zone; ``hr`` is the zone's threshold in bpm."""
+
+    zone: int
+    hr: int | None
+    time_sec: int | None
+
+
+class LapOut(BaseModel):
+    """One lap of an activity."""
+
+    lap: int
+    start_time: datetime.datetime | None
+    stop_time: datetime.datetime | None
+    elapsed_sec: int | None
+    moving_sec: int | None
+    distance_km: float | None
+    avg_speed_kmh: float | None
+    max_speed_kmh: float | None
+    avg_hr: int | None
+    max_hr: int | None
+    avg_cadence: int | None
+    max_cadence: int | None
+    ascent_m: float | None
+    descent_m: float | None
+    calories: int | None
+    avg_temperature_c: float | None
+    hr_zones: List[HrZoneOut]
+
+
+class RunningDynamicsOut(BaseModel):
+    """Running details of an activity (GarminDB's ``steps_activities``)."""
+
+    steps: int | None
+    avg_pace_sec_per_km: float | None
+    avg_moving_pace_sec_per_km: float | None
+    max_pace_sec_per_km: float | None
+    avg_steps_per_min: int | None
+    max_steps_per_min: int | None
+    avg_step_length_mm: float | None
+    avg_vertical_ratio_pct: float | None
+    avg_vertical_oscillation_mm: float | None
+    avg_ground_contact_time_ms: float | None
+    vo2_max: float | None
+
+
+class ActivityDetailOut(ActivitySummaryOut):
+    """Every stored field of one activity, with its heart rate zones, running details and laps."""
+
+    description: str | None
+    type: str | None
+    lap_count: int | None
+    device_serial_number: int | None
+    self_eval_feel: str | None
+    self_eval_effort: str | None
+    training_load: float | None
+    cycles: float | None
+    avg_cadence: int | None
+    max_cadence: int | None
+    max_speed_kmh: float | None
+    avg_rr: float | None
+    max_rr: float | None
+    avg_temperature_c: float | None
+    min_temperature_c: float | None
+    max_temperature_c: float | None
+    start_lat: float | None
+    start_lon: float | None
+    stop_lat: float | None
+    stop_lon: float | None
+    hr_zones_method: str | None
+    hr_zones: List[HrZoneOut]
+    running: RunningDynamicsOut | None
+    laps: List[LapOut]
+
+
+class LineStringOut(BaseModel):
+    """GeoJSON LineString geometry; positions are ``[lon, lat]``."""
+
+    type: Literal["LineString"] = "LineString"
+    coordinates: List[List[float]]
+
+
+class TrackPropertiesOut(BaseModel):
+    """Properties of a track feature."""
+
+    activity_id: str
+    points: int
+
+
+class TrackOut(BaseModel):
+    """GPS track of an activity as a GeoJSON Feature, readable by Leaflet's ``L.geoJSON``.
+
+    ``bbox`` is ``[min lon, min lat, max lon, max lat]``, or None when the
+    activity has no position (a treadmill run).
+    """
+
+    type: Literal["Feature"] = "Feature"
+    geometry: LineStringOut
+    properties: TrackPropertiesOut
+    bbox: List[float] | None
+
+
+class RecordsOut(BaseModel):
+    """The records of one activity, one list per field, all lists the same length and in time order.
+
+    ``elapsed_sec`` counts from the first record.
+    """
+
+    activity_id: str
+    timestamp: List[datetime.datetime | None]
+    elapsed_sec: List[float | None]
+    distance_km: List[float | None]
+    altitude_m: List[float | None]
+    hr: List[int | None]
+    speed_kmh: List[float | None]
+    cadence: List[int | None]
+    temperature_c: List[float | None]
+    lat: List[float | None]
+    lon: List[float | None]
+
+
+class MeasureDayOut(BaseModel):
+    """Withings readings of one calendar day (``TIMEZONE`` setting): the last reading of the day per type.
+
+    The moving averages run over every reading up to that day.
+    """
+
+    date: datetime.date
+    weight_kg: float | None
+    fat_ratio_pct: float | None
+    fat_ratio_ema: float | None
+    muscle_mass_kg: float | None
+    muscle_mass_ema: float | None
+    fat_mass_kg: float | None
+    fat_free_mass_kg: float | None
+    bone_mass_kg: float | None
+    hydration_kg: float | None
