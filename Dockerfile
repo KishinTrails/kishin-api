@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # when pyproject.toml or poetry.lock change — not when application code changes.
 # --no-root skips installing the kishin_trails package itself at this stage
 # since the source hasn't been copied yet.
-COPY pyproject.toml poetry.lock README.md ./
+COPY pyproject.toml poetry.lock README.md LICENSE ./
 RUN pip install --no-cache-dir poetry \
     && poetry config virtualenvs.in-project true \
     && poetry install --only main --no-interaction --no-ansi --no-root
@@ -29,6 +29,10 @@ COPY kishin_trails/ ./kishin_trails/
 
 # Install the kishin_trails package itself (omitted by --no-root above).
 RUN poetry install --only main --no-interaction --no-ansi
+
+# /docs, /redoc and /openapi.json need no login and list every route: off in
+# the image, on for a local run (see config.py).
+ENV EXPOSE_DOCS=false
 
 # Hand off ownership to the non-root user.
 RUN chown -R appuser:appuser /app

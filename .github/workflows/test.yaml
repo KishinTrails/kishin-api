@@ -6,14 +6,20 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions: {}
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
@@ -22,14 +28,6 @@ jobs:
 
       - name: Configure Poetry in-project virtualenv
         run: poetry config virtualenvs.in-project true
-
-      - name: Cache pip wheels
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/pip
-          key: pip-wheels-${{ runner.os }}-3.14-${{ hashFiles('poetry.lock') }}
-          restore-keys: |
-            pip-wheels-${{ runner.os }}-3.14-
 
       - name: Install dependencies
         run: poetry install

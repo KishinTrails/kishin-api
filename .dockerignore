@@ -10,3 +10,14 @@ __pycache__
 .coverage
 .ty
 .pylintrc
+# Personal data and local secrets: never in the build context
+dev-secrets
+cache
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.gpx
+*.fit
+*.tcx
+*.dump

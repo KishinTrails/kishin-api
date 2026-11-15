@@ -54,7 +54,7 @@ from typing import Annotated
 
 import typer
 
-from kishin_trails.config import settings
+from kishin_trails.config import servingProblems, settings
 
 from . import cache, db, geo, gpx, health, noise, password, plan
 from .common import fail
@@ -77,10 +77,9 @@ def run(
     reload: Annotated[bool, typer.Option("--reload", help="Restart when a source file changes")] = False,
 ) -> None:
     """Serve the API."""
-    if settings.SECRET_KEY == "CHANGE_ME":
-        fail("SECRET_KEY is still the default CHANGE_ME; set a real secret before serving.")
-    if not settings.KISHIN_USERNAME or not settings.KISHIN_PASSWORD_HASH:
-        fail("Set KISHIN_USERNAME and KISHIN_PASSWORD_HASH (see `kishin password`) before serving.")
+    problems = servingProblems(settings)
+    if problems:
+        fail(" ".join(problems))
 
     # Imported here so the other commands do not pay for uvicorn's import.
     import uvicorn  # pylint: disable=import-outside-toplevel

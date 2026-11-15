@@ -6,6 +6,8 @@ authors = [
     {name = "Maxime Puys", email = "drakes00@gmail.com"}
 ]
 readme = "README.md"
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<4.0.0"
 dependencies = [
     "fastapi (>=0.138.2,<1.0.0)",

@@ -44,13 +44,24 @@ poetry install
 
 Create a `.env` file in the project root.
 
-**Required variables:**
-- `SECRET_KEY` - For JWT token signing
+**Required variables** (the server refuses to start while `SECRET_KEY`, `KISHIN_USERNAME` or
+`KISHIN_PASSWORD_HASH` is missing):
+- `SECRET_KEY` - For JWT token signing; no default, at least 32 characters. Generate one with
+  `python -c 'import secrets; print(secrets.token_hex(32))'`
 - `DATABASE_URL` - Database connection string
 - `KISHIN_USERNAME` - Username of the only account
 - `KISHIN_PASSWORD_HASH` - Argon2 hash of its password. Read from the file
   `/run/secrets/KISHIN_PASSWORD_HASH`, or `dev-secrets/KISHIN_PASSWORD_HASH` for a local run
   (git-ignored); `kishin password` writes it
+
+**API documentation:** `/docs`, `/redoc` and `/openapi.json` answer while `EXPOSE_DOCS` is true
+(the default). The Dockerfile sets it to false, so the image does not serve them.
+
+**Login throttling:** a client address that makes `LOGIN_MAX_ATTEMPTS` (default 5) login
+attempts within `LOGIN_INTERVAL` seconds (default 60) gets 429 until the oldest attempt is that
+old; a successful login clears its count. Behind a reverse proxy, set the environment variable
+`FORWARDED_ALLOW_IPS` to the proxy's address, so uvicorn takes the client address from
+`X-Forwarded-For`. Without it every client has the proxy's address and shares one count.
 
 ### Run Development Server
 
@@ -62,7 +73,7 @@ The API will be available at `http://localhost:8000`.
 
 ### API Documentation
 
-Interactive API docs are available at:
+Interactive API docs are available at (while `EXPOSE_DOCS` is true; off in the Docker image):
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
@@ -76,7 +87,8 @@ the full command tree, or `poetry run kishin <group> --help` for one group.
 ### `kishin password` - The Account's Password
 
 Prompts for a password twice and writes its Argon2 hash to the file, readable by its owner
-only. The server reads it at startup.
+only. The server reads it at startup. Each token holds the start of the SHA-256 of the hash it
+was issued for, so once the server restarts with a new hash it refuses every earlier token.
 
 ```bash
 mkdir -p dev-secrets
@@ -159,6 +171,18 @@ GitHub Actions workflows run on every push and pull request to `main`:
 **Testing** (`.github/workflows/test.yaml`):
 - Run pytest with coverage reporting
 
+**Release** (`.github/workflows/release.yaml`), only for a tag `vX.Y.Z` that matches the version
+in `pyproject.toml`:
+- Run the tests, pylint and ty
+- Build the image without a layer cache and scan it with Trivy; a fixable critical or high
+  vulnerability, or a secret found in the image, stops the release
+- Push `ghcr.io/kishintrails/kishin-api` as `X.Y.Z`, `X.Y` and `latest`, with a build provenance
+  attestation and a CycloneDX SBOM attestation. Check one before deploying it:
+  `gh attestation verify oci://ghcr.io/kishintrails/kishin-api@sha256:<digest> --owner KishinTrails`
+
+**Pull request image build** (`.github/workflows/pr_image_build.yaml`): builds the image, without
+pushing it, when a pull request changes the Dockerfile or the dependencies.
+
 ## 🔗 Useful Links
 
 - [S2 Viewer](https://igorgatis.github.io/ws2/) - Visualize S2 cells
@@ -167,6 +191,14 @@ GitHub Actions workflows run on every push and pull request to `main`:
 ## 📂 Related Projects
 
 - [kishin-frontend](https://github.com/KishinTrails/kishin-frontend) - Vue 3/Ionic mobile frontend
+
+## 📜 License
+
+This project is released under the [PolyForm Noncommercial License 1.0.0](LICENSE). Any
+noncommercial purpose is permitted, which the licence spells out as including personal
+study, hobby projects and use by charities, schools, public research organisations and
+government bodies. It grants no licence for commercial use. The `LICENSE` file is the
+terms; this paragraph is not.
 
 ---
 

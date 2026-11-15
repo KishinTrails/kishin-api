@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from kishin_trails.config import settings
+from kishin_trails.security import ALGORITHM, PASSWORD_CLAIM, passwordFingerprint
 
 # Token location is /auth/login (see auth.py)
 oauth2Scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -23,7 +24,8 @@ def requireLogin(token: Annotated[str, Depends(oauth2Scheme)]) -> None:
         token: The JWT access token.
 
     Raises:
-        HTTPException 401: If the token is invalid or expired, or its subject is not ``KISHIN_USERNAME``.
+        HTTPException 401: If the token is invalid or expired, its subject is not ``KISHIN_USERNAME``,
+            or it was issued for another password hash than ``KISHIN_PASSWORD_HASH``.
     """
     credentialsException = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -31,7 +33,7 @@ def requireLogin(token: Annotated[str, Depends(oauth2Scheme)]) -> None:
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.PyJWTError as error:
         raise credentialsException from error
 
@@ -39,4 +41,10 @@ def requireLogin(token: Annotated[str, Depends(oauth2Scheme)]) -> None:
     if not settings.KISHIN_USERNAME or not isinstance(subject, str):
         raise credentialsException
     if not hmac.compare_digest(subject.encode(), settings.KISHIN_USERNAME.encode()):
+        raise credentialsException
+
+    fingerprint = payload.get(PASSWORD_CLAIM)
+    if not isinstance(fingerprint, str):
+        raise credentialsException
+    if not hmac.compare_digest(fingerprint.encode(), passwordFingerprint(settings.KISHIN_PASSWORD_HASH).encode()):
         raise credentialsException

@@ -18,7 +18,6 @@ from typing import Annotated
 
 import typer
 
-from kishin_trails.config import settings
 from kishin_trails.security import getPasswordHash
 
 from .common import checkPassword, fail
@@ -43,7 +42,7 @@ def setPassword(
 
     typer.secho(f"[OK] Password hash written to {file}.", fg=typer.colors.GREEN)
     typer.secho(
-        "[WARNING] The server reads the hash at startup: restart it. Tokens issued before stay valid for up to "
-        f"{settings.ACCESS_TOKEN_EXPIRE_MINUTES} minutes; change SECRET_KEY to end them now.",
+        "[WARNING] The server reads the hash at startup: restart it. Once restarted, it refuses the tokens "
+        "issued for the previous password.",
         fg=typer.colors.YELLOW,
     )

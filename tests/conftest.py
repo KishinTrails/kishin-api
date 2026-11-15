@@ -10,6 +10,9 @@ import os
 # The old "sqlite:///./test.db" guard was half-hearted: it prevented writes to
 # kishin.db but still created a test.db file on disk.
 os.environ["DATABASE_URL"] = "sqlite://"
+# A test signing key, so the tests do not depend on a local .env (the setting has
+# no default).
+os.environ["SECRET_KEY"] = "test-secret-key-of-at-least-32-characters"
 
 import pytest
 import pytest_asyncio
@@ -20,6 +23,7 @@ from sqlalchemy.pool import StaticPool
 
 from kishin_trails.main import app
 from kishin_trails.database import Base, getDb
+from kishin_trails.auth import LOGIN_THROTTLE
 from kishin_trails.dependencies import requireLogin
 from kishin_trails.models import Tile, POI
 
@@ -68,6 +72,14 @@ noise_cache_module._LOCAL.session_factory = TestingSessionLocal
 # on the wrong engine. By pre-creating them here on the test engine,
 # all TestingSessionLocal queries find the tables they expect.
 Base.metadata.create_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def clearLoginThrottle():
+    """Each test starts with no recorded login attempt."""
+    LOGIN_THROTTLE.clear()
+    yield
+    LOGIN_THROTTLE.clear()
 
 
 @pytest.fixture(scope="function")

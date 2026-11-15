@@ -96,8 +96,10 @@ poetry shell
 ### Configuration
 - All config via Pydantic Settings loaded from `.env`
 - Never hardcode secrets in code
-- Required env vars: `SECRET_KEY`, `DATABASE_URL`
-- Default values provided for all settings
+- Required settings, with no default: `SECRET_KEY` (at least 32 characters), `KISHIN_USERNAME`,
+  `KISHIN_PASSWORD_HASH`. `config.servingProblems` lists the missing ones; the `lifespan` in
+  `main.py` and `kishin run` refuse to start while any is missing
+- The JWT algorithm is the constant `security.ALGORITHM` (HS256), not a setting
 
 ### Geo-Spatial Code
 - Use geopandas for GeoDataFrames
