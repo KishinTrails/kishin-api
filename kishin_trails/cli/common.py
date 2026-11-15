@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from kishin_trails import database
 
-MIN_PASSWORD_LENGTH = 6
+MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 4096
 
 

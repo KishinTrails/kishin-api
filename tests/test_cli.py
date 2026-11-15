@@ -13,6 +13,7 @@ from sqlalchemy import inspect, select, text
 from typer.testing import CliRunner
 
 from kishin_trails.cli import app
+from kishin_trails.cli.common import MIN_PASSWORD_LENGTH
 from kishin_trails.models import ExploredTile, Tile
 from kishin_trails.security import verifyPassword
 
@@ -76,6 +77,16 @@ def test_password_too_short_writes_nothing(tmp_path):
     result = runner.invoke(app, ["password", str(hashFile)], input="abc\nabc\n")
     assert result.exit_code == 1
     assert not hashFile.exists()
+
+
+def test_password_length_limit(tmp_path):
+    hashFile = tmp_path / "KISHIN_PASSWORD_HASH"
+    tooShort = "x" * (MIN_PASSWORD_LENGTH - 1)
+    assert runner.invoke(app, ["password", str(hashFile)], input=f"{tooShort}\n{tooShort}\n").exit_code == 1
+    assert not hashFile.exists()
+    longEnough = "x" * MIN_PASSWORD_LENGTH
+    assert runner.invoke(app, ["password", str(hashFile)], input=f"{longEnough}\n{longEnough}\n").exit_code == 0
+    assert verifyPassword(longEnough, hashFile.read_text())
 
 
 def test_password_in_a_missing_directory_fails(tmp_path):
