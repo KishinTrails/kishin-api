@@ -59,11 +59,12 @@ def insertJunctionEntry(tileS2Cell: str, poiId: int) -> None:
     """Links a polygon POI to a tile, so a later pass can fill its interior tiles."""
     session = database.SESSION_LOCAL()
     try:
-        # INSERT OR IGNORE: the same polygon can cover a tile more than once.
+        # ON CONFLICT DO NOTHING: the same polygon can cover a tile more than once.
         session.execute(
             text(
-                "INSERT OR IGNORE INTO tile_post_processing_pois "
-                "(tile_s2_cell_id, post_processing_poi_id) VALUES (:tile, :poiId)"
+                "INSERT INTO tile_post_processing_pois "
+                "(tile_s2_cell_id, post_processing_poi_id) VALUES (:tile, :poiId) "
+                "ON CONFLICT DO NOTHING"
             ),
             {
                 "tile": tileS2Cell,
@@ -206,13 +207,6 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
                         if cell in uniqueLevel16Children:
                             elementsByTile.setdefault(cell, []).append({"id": row["id"], "tags": tags})
 
-    logger.info("Processing %d polygon(s) for post-processing...", len(polygonProcessing))
-    for osmId, name, tileType, geometry in tqdm(polygonProcessing, desc="Preprocessing polygons"):
-        poiId = insertOrGetPostProcessingPoi(osmId, name, tileType)
-        for cell in _s2CellsFromGeometry(geometry, 16):
-            if cell in uniqueLevel16Children:
-                insertJunctionEntry(cell, poiId)
-
     processed = 0
     skipped = 0
     for level16Cell in tqdm(uniqueLevel16Children, desc="Caching tiles"):
@@ -223,6 +217,15 @@ def populateCacheForTiles(s2Cells: list[str], skipCached: bool = True, queryReso
         waypoints, tileType = filterWaypointsForCache(elements)
         setTile(level16Cell, tileType, waypoints)
         processed += 1
+
+    # After the tiles: a junction row references its tile (foreign key), and every
+    # cell kept here is one of uniqueLevel16Children, which the loop above created.
+    logger.info("Processing %d polygon(s) for post-processing...", len(polygonProcessing))
+    for osmId, name, tileType, geometry in tqdm(polygonProcessing, desc="Preprocessing polygons"):
+        poiId = insertOrGetPostProcessingPoi(osmId, name, tileType)
+        for cell in _s2CellsFromGeometry(geometry, 16):
+            if cell in uniqueLevel16Children:
+                insertJunctionEntry(cell, poiId)
 
     logger.info("Finished: processed %d tiles, skipped %d tiles", processed, skipped)
 

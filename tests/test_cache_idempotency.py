@@ -329,9 +329,11 @@ class TestPostProcessingPoIIdempotency:
         assert count == 1
 
     def test_insert_junction_entry_no_duplicates(self, db_session, s2_test_cell):
-        """insertJunctionEntry with INSERT OR IGNORE never creates duplicates."""
+        """insertJunctionEntry with ON CONFLICT DO NOTHING never creates duplicates."""
+        from kishin_trails.cache import setTile
         from kishin_trails.populate import insertJunctionEntry, insertOrGetPostProcessingPoi
 
+        setTile(s2_test_cell, "natural", [])  # a junction row references its tile
         poi_id = insertOrGetPostProcessingPoi(12345, "Forest", "natural")
 
         # Insert twice
@@ -354,13 +356,13 @@ class TestPostProcessingPoIIdempotency:
         """--fill-polygons can be run multiple times safely."""
         from kishin_trails.populate import (fillPolygonInteriors, insertJunctionEntry, insertOrGetPostProcessingPoi)
 
-        # Setup: PostProcessingPoI with linked tiles
-        poi_id = insertOrGetPostProcessingPoi(12345, "Forest", "natural")
-        insertJunctionEntry(s2_test_cell, poi_id)
-
+        # Setup: a tile, then a PostProcessingPoI linked to it (the link references the tile)
         tile = Tile(s2_cell_id=s2_test_cell, tile_type=None)
         db_session.add(tile)
         db_session.commit()
+
+        poi_id = insertOrGetPostProcessingPoi(12345, "Forest", "natural")
+        insertJunctionEntry(s2_test_cell, poi_id)
 
         # First fill
         fillPolygonInteriors()
@@ -386,16 +388,16 @@ class TestPostProcessingPoIIdempotency:
             populateCacheForTiles,
         )
 
-        # Create PostProcessingPoI
-        poi_id = insertOrGetPostProcessingPoi(54321, "Test Forest", "natural")
-
-        # Link to tile via junction table
-        insertJunctionEntry(s2_test_cell, poi_id)
-
         # Create tile with NULL tile_type (simulating incomplete state)
         tile = Tile(s2_cell_id=s2_test_cell, tile_type=None)
         db_session.add(tile)
         db_session.commit()
+
+        # Create PostProcessingPoI
+        poi_id = insertOrGetPostProcessingPoi(54321, "Test Forest", "natural")
+
+        # Link to tile via junction table (the link references the tile)
+        insertJunctionEntry(s2_test_cell, poi_id)
 
         # Verify initial state
         tile_initial = db_session.query(Tile).filter(Tile.s2_cell_id == s2_test_cell).first()

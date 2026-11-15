@@ -84,7 +84,9 @@ poetry shell
 - All async tests use `@pytest.mark.asyncio` decorator
 - Use fixtures from `conftest.py` for database and HTTP client
 - Mock external services (requests.post) with unittest.mock
-- Tests should isolate dependencies (in-memory SQLite for tests)
+- Tests run against PostgreSQL: a throwaway `postgres:17-alpine` container per run
+  (testcontainers, Docker needed), or the server named by `TEST_DATABASE_URL`. Tables are
+  emptied after each test
 - Use `tmp_path` fixture for file-based test isolation
 
 ### Logging
@@ -96,7 +98,8 @@ poetry shell
 ### Configuration
 - All config via Pydantic Settings loaded from `.env`
 - Never hardcode secrets in code
-- Required settings, with no default: `SECRET_KEY` (at least 32 characters), `KISHIN_USERNAME`,
+- Required settings, with no default: `DATABASE_URL` (PostgreSQL, `postgresql+psycopg://`),
+  `SECRET_KEY` (at least 32 characters), `KISHIN_USERNAME`,
   `KISHIN_PASSWORD_HASH`. `config.servingProblems` lists the missing ones; the `lifespan` in
   `main.py` and `kishin run` refuse to start while any is missing
 - The JWT algorithm is the constant `security.ALGORITHM` (HS256), not a setting

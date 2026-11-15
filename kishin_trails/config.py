@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     Application settings, loaded from environment variables or a .env file.
 
     Attributes:
-        DATABASE_URL: SQLAlchemy database connection string.
+        DATABASE_URL: SQLAlchemy URL of the PostgreSQL game database (postgresql+psycopg://…). No default.
         SECRET_KEY: Secret key for JWT token signing, at least MIN_SECRET_KEY_LENGTH characters. No default.
         ACCESS_TOKEN_EXPIRE_MINUTES: Token expiration time in minutes.
         KISHIN_USERNAME: Username of the application's only account.
@@ -38,7 +38,11 @@ class Settings(BaseSettings):
         TIMEZONE: IANA time zone that decides the calendar day of a Withings reading.
     """
 
-    DATABASE_URL: str = "sqlite:///./kishin.db"
+    # The PostgreSQL game database. The URL holds the password, so on a server
+    # it comes from /run/secrets/DATABASE_URL, and locally from
+    # dev-secrets/DATABASE_URL (see secrets_dir below). No default: the server
+    # refuses to start while it is empty (see servingProblems).
+    DATABASE_URL: str = ""
 
     # Security
     # No default: a committed default would sign real tokens on any server
@@ -113,6 +117,8 @@ settings = Settings()
 def servingProblems(config: Settings) -> list[str]:
     """The settings the server cannot serve without, one sentence each; empty when all are set."""
     problems = []
+    if not config.DATABASE_URL:
+        problems.append("DATABASE_URL is not set (postgresql+psycopg://user:password@host/kishin).")
     if not config.SECRET_KEY:
         problems.append(
             "SECRET_KEY is not set. Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"

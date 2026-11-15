@@ -3,31 +3,35 @@
 
     kishin db init
     kishin db stats
-    kishin db checkpoint
-    kishin db drop-legacy-tables --yes
+    kishin db copy-from-sqlite cache/kishin.db
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
-from sqlalchemy import func, inspect, select, text
+from sqlalchemy import Connection, MetaData, Table, create_engine, func, inspect, select, text
 
 from kishin_trails import database
 from kishin_trails.cache import initDb as initCacheDb
 from kishin_trails.models import POI, ExploredTile, NoiseCache, PostProcessingPoI, Tile
 from kishin_trails.training import Plan, TrainingCompletion
 
-from .common import openSession
+from .common import fail, openSession
 
 app = typer.Typer(help="Schema and maintenance operations.", no_args_is_help=True)
+
+#: Rows read from the SQLite file and inserted at a time by copy-from-sqlite.
+COPY_BATCH_ROWS = 5000
 
 
 @app.command("init")
 def init() -> None:
     """Create any missing tables — the same pair run at server startup."""
-    database.Base.metadata.create_all(bind=database.engine)
+    with openSession() as session:
+        database.Base.metadata.create_all(bind=session.get_bind())
     initCacheDb()
     typer.secho("[OK] Tables created.", fg=typer.colors.GREEN)
 
@@ -52,66 +56,70 @@ def stats() -> None:
             typer.echo(f"{name:<{width}}  {count}")
 
 
-#: Tables of the multi-account schema, in an order that drops a table before the tables it references.
-LEGACY_ACCOUNT_TABLES = ("user_explored_tiles", "user_active_plans")
-LEGACY_PLAN_TABLES = ("training_completions", "segments", "trainings", "plan_weeks", "plans")
-LEGACY_USER_TABLE = "users"
+def copyTables(source: Connection, target: Connection) -> list[tuple[str, int | None]]:
+    """Copies the rows of every current table from ``source`` (a SQLite file) to ``target``.
 
+    Tables are copied in dependency order, with the columns both databases have.
+    A table missing from ``source`` is reported with ``None`` and skipped; tables
+    of ``source`` that are not current, such as the multi-account ``users``, are
+    ignored. Each ``id`` sequence of ``target`` is then set past the copied ids.
 
-def legacyTables(connection) -> list[str]:
-    """The tables of the multi-account schema present in the database, in drop order.
-
-    The plan tables are listed only when ``plans`` still has the ``owner_id``
-    column; otherwise they are the current ones.
+    Returns:
+        ``(table name, rows copied or None)`` for every current table.
     """
-    inspector = inspect(connection)
-    present = set(inspector.get_table_names())
-    tables = [name for name in LEGACY_ACCOUNT_TABLES if name in present]
-    if "plans" in present and "owner_id" in {column["name"] for column in inspector.get_columns("plans")}:
-        tables += [name for name in LEGACY_PLAN_TABLES if name in present]
-    if LEGACY_USER_TABLE in present:
-        tables.append(LEGACY_USER_TABLE)
-    return tables
+    sourceTables = set(inspect(source).get_table_names())
+    copied: list[tuple[str, int | None]] = []
+    for table in database.Base.metadata.sorted_tables:
+        if table.name not in sourceTables:
+            copied.append((table.name, None))
+            continue
+        old = Table(table.name, MetaData(), autoload_with=source)
+        names = [column.name for column in table.columns if column.name in old.columns]
+        result = source.execute(select(*(old.columns[name] for name in names)))
+        count = 0
+        while batch := result.fetchmany(COPY_BATCH_ROWS):
+            target.execute(table.insert(), [dict(zip(names, row)) for row in batch])
+            count += len(batch)
+        copied.append((table.name, count))
+
+    for table in database.Base.metadata.sorted_tables:
+        if "id" in table.columns and table.columns["id"].primary_key:
+            target.execute(
+                text(
+                    f"SELECT setval(pg_get_serial_sequence('{table.name}', 'id'), "
+                    f"COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM {table.name}"
+                )
+            )
+    return copied
 
 
-@app.command("drop-legacy-tables")
-def dropLegacyTables(
-    yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation")] = False,
+@app.command("copy-from-sqlite")
+def copyFromSqlite(
+    file: Annotated[Path, typer.Argument(help="SQLite database file (kishin.db)", exists=True, dir_okay=False)],
 ) -> None:
-    """Drop the tables of the multi-account schema, then create the current ones.
+    """Copy the tiles, POIs, noise cache, explored tiles and plans of a SQLite file into the database.
 
-    Drops the users, the per-account explored tiles and active plans, and the
-    plan tables when they still have an owner column. Tiles, POIs and the noise
-    cache are kept.
+    The file is opened read-only. The PostgreSQL tables must be empty: the copy
+    runs in one transaction and changes nothing when it fails.
     """
+    sourceEngine = create_engine(f"sqlite:///file:{file.resolve()}?mode=ro&uri=true")
     with openSession() as session:
-        tables = legacyTables(session.connection())
-        if not tables:
-            typer.echo("No legacy tables.")
-            return
-        if not yes:
-            typer.confirm(f"Drop {', '.join(tables)} and their rows?", abort=True)
-        for name in tables:
-            session.execute(text(f'DROP TABLE "{name}"'))
-        session.commit()
         database.Base.metadata.create_all(bind=session.get_bind())
-    typer.secho(f"[OK] Dropped {', '.join(tables)}; current tables created.", fg=typer.colors.GREEN)
+        session.commit()
+        filled = [
+            table.name
+            for table in database.Base.metadata.sorted_tables
+            if session.execute(select(func.count()).select_from(table)).scalar()  # pylint: disable=not-callable
+        ]
+        if filled:
+            fail(f"These tables already hold rows: {', '.join(filled)}. The copy needs empty tables.")
 
+        with sourceEngine.connect() as source:
+            copied = copyTables(source, session.connection())
+        session.commit()
+    sourceEngine.dispose()
 
-@app.command("checkpoint")
-def checkpoint() -> None:
-    """Run a WAL checkpoint now, instead of waiting for the 24-hour loop in main.py.
-
-    No-op on backends other than SQLite, since ``PRAGMA wal_checkpoint`` is
-    SQLite-specific.
-    """
-    if not database.SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
-        typer.secho(
-            "[WARNING] Not a SQLite database; nothing to checkpoint.",
-            fg=typer.colors.YELLOW,
-        )
-        return
-
-    with database.engine.connect() as connection:
-        connection.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-    typer.secho("[OK] WAL checkpoint complete.", fg=typer.colors.GREEN)
+    width = max(len(name) for name, _ in copied)
+    for name, count in copied:
+        typer.echo(f"{name:<{width}}  {'not in the file, skipped' if count is None else count}")
+    typer.secho(f"[OK] Copied {file}.", fg=typer.colors.GREEN)

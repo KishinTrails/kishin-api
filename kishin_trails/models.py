@@ -6,7 +6,7 @@ explored tiles. The application has one account, configured in the settings
 (see ``config.py``), so no table holds users.
 """
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kishin_trails.database import Base
@@ -59,7 +59,8 @@ class POI(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     s2_cell_id: Mapped[str] = mapped_column(String, ForeignKey("tiles.s2_cell_id"), nullable=False, index=True)
-    osm_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # OpenStreetMap ids exceed 2^31: BIGINT, not INTEGER.
+    osm_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     name: Mapped[str | None] = mapped_column(String)
     lat: Mapped[float] = mapped_column(Float, nullable=False)
     lon: Mapped[float] = mapped_column(Float, nullable=False)
@@ -114,7 +115,7 @@ class PostProcessingPoI(Base):
     __tablename__ = "post_processing_pois"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    osm_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    osm_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
     name: Mapped[str | None] = mapped_column(String)
     tile_type: Mapped[str] = mapped_column(String, nullable=False)
     tiles: Mapped[list["Tile"]] = relationship(

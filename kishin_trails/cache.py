@@ -8,7 +8,7 @@ to avoid repeated Overpass API queries.
 import logging
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import joinedload
 
 from kishin_trails.database import SESSION_LOCAL, engine, Base
@@ -107,16 +107,15 @@ def _queryTilesSql(session, s2Cells: List[str]) -> Dict[str, Dict[str, Any] | No
 
     for i in range(0, len(s2Cells), CHUNK_SIZE):
         chunk = s2Cells[i:i + CHUNK_SIZE]
-        placeholders = ",".join("?" * len(chunk))
 
         result = session.execute(
             text(
-                f"""
+                """
             SELECT
                 t.s2_cell_id,
                 CASE
                     WHEN t.tile_type = 'peak' THEN t.tile_type
-                    WHEN t.active = 1 THEN t.tile_type
+                    WHEN t.active IS TRUE THEN t.tile_type
                     ELSE NULL
                 END as tile_type,
                 p.osm_id,
@@ -126,10 +125,10 @@ def _queryTilesSql(session, s2Cells: List[str]) -> Dict[str, Dict[str, Any] | No
                 p.elevation
             FROM tiles t
             LEFT JOIN pois p ON t.s2_cell_id = p.s2_cell_id
-            WHERE t.s2_cell_id IN ({placeholders})
+            WHERE t.s2_cell_id IN :cells
         """
-            ),
-            chunk
+            ).bindparams(bindparam("cells", expanding=True)),
+            {"cells": list(chunk)},
         )
 
         rows = result.fetchall()
@@ -282,7 +281,7 @@ def getAllActiveTiles() -> List[Dict[str, str]]:
             text(
                 "SELECT s2_cell_id, tile_type FROM tiles "
                 "WHERE tile_type IS NOT NULL "
-                "AND (tile_type = 'peak' OR active = 1)"
+                "AND (tile_type = 'peak' OR active IS TRUE)"
             )
         )
         return [{"s2_cell_id": row[0], "type": row[1]} for row in result.fetchall()]
@@ -329,6 +328,3 @@ def getTilesForPostProcessingPoi(poiId: int) -> List[str]:
         return [row[0] for row in result.fetchall()]
     finally:
         session.close()
-
-
-initDb()

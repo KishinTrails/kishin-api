@@ -8,8 +8,7 @@ The database:
 
     kishin db init
     kishin db stats
-    kishin db checkpoint
-    kishin db drop-legacy-tables --yes
+    kishin db copy-from-sqlite cache/kishin.db
 
 Importing a recorded trail:
 

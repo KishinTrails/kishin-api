@@ -34,7 +34,7 @@ def test_health_engine_requires_url():
 
 
 def test_health_engine_prefix():
-    engine = health.healthEngine("sqlite://", "health_")
+    engine = health.healthEngine("postgresql+psycopg://reader@127.0.0.1/health", "health_")
     assert engine.get_execution_options()["schema_translate_map"]["withings"] == "health_withings"
 
 

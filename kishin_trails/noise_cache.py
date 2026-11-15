@@ -1,14 +1,14 @@
 """
 SQLAlchemy-based persistent cache for Perlin noise values keyed by S2 cell.
 
-Avoids redundant Perlin computation by storing results in a SQLite table.
-Designed for concurrent use across ``multiprocessing.Pool`` workers.
+Avoids redundant Perlin computation by storing results in the ``noise_cache``
+table of the game database. Designed for concurrent use across
+``multiprocessing.Pool`` workers.
 
 Design rationale
 ----------------
 Each forked worker process must own its own SQLAlchemy engine and connection
-pool.  Sharing the parent's engine across ``fork()`` corrupts SQLite's
-internal state and causes the writer lock to never be released.
+pool: a connection shared across ``fork()`` is used by two processes at once.
 
 ``_get_session`` uses a ``threading.local`` to create one engine per process
 (or per thread, if the caller later switches to a thread-pool executor).
@@ -16,18 +16,9 @@ This is intentionally separate from the ``engine`` / ``SESSION_LOCAL`` objects
 in ``database.py``, which are designed for FastAPI's single-process request
 lifecycle and must not be reused across forked processes.
 
-SQLite concurrency settings applied per connection
---------------------------------------------------
-* ``journal_mode=WAL``  — Write-Ahead Logging; allows concurrent readers and
-  one writer instead of an exclusive file lock on every operation.
-* ``synchronous=NORMAL`` — Safe under WAL; significantly faster than FULL.
-* ``busy_timeout=10000`` — Retry for up to 10 s before raising
-  ``OperationalError: database is locked``, giving concurrent writers time
-  to serialise without failing.
-
 Write strategy
 --------------
-``setCachedNoise`` uses a raw ``INSERT OR IGNORE`` rather than
+``setCachedNoise`` uses a raw ``INSERT … ON CONFLICT DO NOTHING`` rather than
 ``session.merge()``.  ``merge()`` does a SELECT then INSERT, which is not
 atomic and loses the race between those two steps under multiprocessing.
 Because Perlin noise is fully deterministic, silently discarding a duplicate
@@ -38,38 +29,13 @@ import logging
 import threading
 from typing import Optional
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from kishin_trails.database import Base, SQLALCHEMY_DATABASE_URL
 from kishin_trails.models import NoiseCache
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Per-process SQLite pragmas
-# ---------------------------------------------------------------------------
-
-
-def _set_sqlite_pragmas(dbapi_conn, _connection_record) -> None:
-    """
-    Apply SQLite connection-level PRAGMAs required for concurrent cache access.
-
-    Registered as a SQLAlchemy ``"connect"`` event listener on each
-    per-process engine created by ``_get_session``.  Unlike the listener in
-    ``database.py`` (which guards against non-SQLite backends), this module
-    always targets SQLite, so the ``isinstance`` check is omitted.
-
-    Args:
-        dbapi_conn: Raw DBAPI connection object provided by SQLAlchemy.
-        _connection_record: Internal SQLAlchemy connection record (unused).
-    """
-    cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=10000")
-    cursor.close()
-
 
 # ---------------------------------------------------------------------------
 # Per-process session factory
@@ -96,16 +62,11 @@ def _get_session():
     if not getattr(_LOCAL, "session_factory", None):
         _engine = create_engine(
             SQLALCHEMY_DATABASE_URL,
-            connect_args={
-                "check_same_thread": False
-            },
             # One connection per worker process is sufficient.
             pool_size=1,
             max_overflow=0,
+            pool_pre_ping=True,
         )
-
-        # Register the pragma listener on this engine instance.
-        event.listen(_engine, "connect", _set_sqlite_pragmas)
 
         # Ensure the cache table exists in this process before any reads/writes.
         Base.metadata.create_all(bind=_engine)
@@ -178,7 +139,7 @@ def setCachedNoise(
     """
     Persist a computed Perlin noise value in the cache.
 
-    Uses ``INSERT OR IGNORE`` so that concurrent workers racing to cache the
+    Uses ``INSERT … ON CONFLICT DO NOTHING`` so that concurrent workers racing to cache the
     same key do not raise a ``UNIQUE`` constraint error.  Because noise values
     are fully deterministic, silently discarding a duplicate write is always
     correct — whoever wins the race wrote the right value.
@@ -194,9 +155,10 @@ def setCachedNoise(
     try:
         session.execute(
             text(
-                "INSERT OR IGNORE INTO noise_cache "
+                "INSERT INTO noise_cache "
                 "(s2_cell_id, scale, octaves, amplitude_decay, noise_value) "
-                "VALUES (:s2_cell_id, :scale, :octaves, :amplitude_decay, :noise_value)"
+                "VALUES (:s2_cell_id, :scale, :octaves, :amplitude_decay, :noise_value) "
+                "ON CONFLICT DO NOTHING"
             ),
             {
                 "s2_cell_id": s2Cell,

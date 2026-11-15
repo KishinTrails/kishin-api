@@ -1,15 +1,16 @@
 """
-A made-up health-sync database for the tests: in-memory SQLite with every schema
-mapped to none, since SQLite has no schemas. All rows are made up.
+A made-up health-sync database for the tests, in the PostgreSQL database
+HEALTH_TEST_DATABASE_URL that tests/conftest.py creates, with health-sync's
+schemas. All rows are made up.
 """
 
 from __future__ import annotations
 
 import datetime
+import os
 
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import StaticPool
 
 from kishin_trails import health
 
@@ -36,17 +37,15 @@ def _day(offset: int, hour: int = 7) -> datetime.datetime:
 
 
 def buildHealthEngine() -> Engine:
-    """Creates and fills the made-up health database."""
-    sqlite = create_engine(
-        "sqlite://",
-        connect_args={
-            "check_same_thread": False
-        },
-        poolclass=StaticPool,
-    ).execution_options(schema_translate_map={schema: None for schema in health.SCHEMAS})
-    health.metadata.create_all(sqlite)
+    """Creates the health schemas and tables, emptied, and fills them."""
+    engine = create_engine(os.environ["HEALTH_TEST_DATABASE_URL"])
+    with engine.begin() as conn:
+        for schema in health.SCHEMAS:
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+    health.metadata.drop_all(engine)
+    health.metadata.create_all(engine)
 
-    with sqlite.begin() as conn:
+    with engine.begin() as conn:
         conn.execute(insert(health.attributes).values(key="measurement_system", value="DisplayMeasure.metric"))
         conn.execute(
             insert(health.activities),
@@ -179,4 +178,4 @@ def buildHealthEngine() -> Engine:
             ],
         )
 
-    return sqlite
+    return engine

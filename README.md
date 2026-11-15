@@ -30,6 +30,8 @@ Backend API service for the Kishin Trails project, providing OSM data integratio
 
 - Python 3.13 or later
 - Poetry 2.0 or later
+- PostgreSQL 17, the server health-sync writes to (locally: health-sync's `compose.dev.yaml`)
+- Docker, for the tests (see Testing below)
 - [kishin-frontend](https://github.com/KishinTrails/kishin-frontend) (optional, for UI)
 
 ## Getting Started
@@ -44,11 +46,13 @@ poetry install
 
 Create a `.env` file in the project root.
 
-**Required variables** (the server refuses to start while `SECRET_KEY`, `KISHIN_USERNAME` or
-`KISHIN_PASSWORD_HASH` is missing):
+**Required variables** (the server refuses to start while `DATABASE_URL`, `SECRET_KEY`,
+`KISHIN_USERNAME` or `KISHIN_PASSWORD_HASH` is missing):
 - `SECRET_KEY` - For JWT token signing; no default, at least 32 characters. Generate one with
   `python -c 'import secrets; print(secrets.token_hex(32))'`
-- `DATABASE_URL` - Database connection string
+- `DATABASE_URL` - The PostgreSQL game database, `postgresql+psycopg://user:password@host/kishin`;
+  no default. It holds a password, so it is read from the file `/run/secrets/DATABASE_URL`, or
+  `dev-secrets/DATABASE_URL` for a local run
 - `KISHIN_USERNAME` - Username of the only account
 - `KISHIN_PASSWORD_HASH` - Argon2 hash of its password. Read from the file
   `/run/secrets/KISHIN_PASSWORD_HASH`, or `dev-secrets/KISHIN_PASSWORD_HASH` for a local run
@@ -100,9 +104,26 @@ poetry run kishin password dev-secrets/KISHIN_PASSWORD_HASH
 ```bash
 poetry run kishin db init         # create any missing tables
 poetry run kishin db stats        # row counts per table
-poetry run kishin db checkpoint   # run a WAL checkpoint now
-poetry run kishin db drop-legacy-tables [--yes]   # drop the tables of the multi-account schema
+poetry run kishin db copy-from-sqlite cache/kishin.db   # copy a SQLite game database, once
 ```
+
+`copy-from-sqlite` reads the SQLite file the earlier versions used, read-only, and copies every
+current table into empty PostgreSQL tables, in one transaction. Tables the file lacks are
+reported and skipped; its old tables (`users`, `user_*`) are ignored.
+
+### The database
+
+The game data (tiles, POIs, noise cache, explored tiles, plans) is in a PostgreSQL database,
+`kishin`, on the server that holds health-sync's `health` database. One user, `kishin-trails`,
+owns `kishin` and reads `health`. health-sync's `db/setup.sh` creates the user; `db/setup.sh`
+here creates the database. Locally, with health-sync's development database running
+(`make dev-up dev-db` in health-sync):
+
+```bash
+DB_EXEC='docker compose -f ../health-sync/compose.dev.yaml exec -T db psql -U postgres -X -q -v ON_ERROR_STOP=1' db/setup.sh
+```
+
+The server creates its tables at startup.
 
 ### `kishin gpx import` - Import GPX Tracks
 
@@ -170,6 +191,12 @@ GitHub Actions workflows run on every push and pull request to `main`:
 
 **Testing** (`.github/workflows/test.yaml`):
 - Run pytest with coverage reporting
+
+The tests run against PostgreSQL. `tests/conftest.py` starts a throwaway `postgres:17-alpine`
+container with testcontainers for the run, creates the databases `kishin_test` and
+`health_test` in it, empties the tables after each test, and removes the container at the end;
+Docker must be running. To use an existing server instead, set `TEST_DATABASE_URL` to a
+superuser URL on it: `kishin_test` and `health_test` are then dropped and created there.
 
 **Release** (`.github/workflows/release.yaml`), only for a tag `vX.Y.Z` that matches the version
 in `pyproject.toml`:

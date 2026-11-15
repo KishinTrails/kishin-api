@@ -1,77 +1,93 @@
 """
 Pytest configuration and shared fixtures.
+
+The tests run against PostgreSQL, the database the application uses. By default
+testcontainers starts a throwaway ``postgres:17-alpine`` container (the server's
+version) for the run and removes it at exit; Docker must be running. To use an
+existing server instead, set ``TEST_DATABASE_URL`` to a superuser URL on it, such as
+``postgresql+psycopg://postgres:password@127.0.0.1:55432/postgres``: the databases
+``kishin_test`` and ``health_test`` are then dropped and created there.
 """
 
+import atexit
 import os
 
-# Use the in-memory URL as the env var itself — this way any module that reads
-# DATABASE_URL from settings (including noise_cache_sqlite._get_session()) will
-# also get the in-memory database and never touch the filesystem.
-# The old "sqlite:///./test.db" guard was half-hearted: it prevented writes to
-# kishin.db but still created a test.db file on disk.
-os.environ["DATABASE_URL"] = "sqlite://"
+from sqlalchemy import create_engine, make_url, text
+
+#: The two databases the tests create, one for the game data, one for the health data.
+GAME_TEST_DATABASE = "kishin_test"
+HEALTH_TEST_DATABASE = "health_test"
+
+
+def _serverUrl() -> str:
+    """A superuser URL on the test PostgreSQL server, starting a container when needed."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if url:
+        return url
+    from testcontainers.community.postgres import PostgresContainer  # pylint: disable=import-outside-toplevel
+
+    container = PostgresContainer("postgres:17-alpine", driver="psycopg")
+    container.start()
+    atexit.register(container.stop)
+    return container.get_connection_url()
+
+
+def _createDatabases(serverUrl: str) -> tuple[str, str]:
+    """Drops and creates the two test databases; returns their URLs."""
+    admin = create_engine(serverUrl, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        for name in (GAME_TEST_DATABASE, HEALTH_TEST_DATABASE):
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+    admin.dispose()
+    base = make_url(serverUrl)
+    return (
+        base.set(database=GAME_TEST_DATABASE).render_as_string(hide_password=False),
+        base.set(database=HEALTH_TEST_DATABASE).render_as_string(hide_password=False),
+    )
+
+
+# Set before the application is imported: kishin_trails.database builds its engine,
+# and noise_cache its per-process engines, from DATABASE_URL.
+os.environ["DATABASE_URL"], os.environ["HEALTH_TEST_DATABASE_URL"] = _createDatabases(_serverUrl())
 # A test signing key, so the tests do not depend on a local .env (the setting has
 # no default).
 os.environ["SECRET_KEY"] = "test-secret-key-of-at-least-32-characters"
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
 
-from kishin_trails.main import app
-from kishin_trails.database import Base, getDb
-from kishin_trails.auth import LOGIN_THROTTLE
-from kishin_trails.dependencies import requireLogin
-from kishin_trails.models import Tile, POI
+from kishin_trails import database  # noqa: E402
+from kishin_trails.main import app  # noqa: E402
+from kishin_trails.database import Base, getDb  # noqa: E402
+from kishin_trails.auth import LOGIN_THROTTLE  # noqa: E402
+from kishin_trails.dependencies import requireLogin  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Single shared in-memory engine for the entire test session.
-# StaticPool ensures every connection (including from monkey-patched modules)
-# sees the same in-memory database instead of getting an independent blank one.
-# ---------------------------------------------------------------------------
-TEST_DATABASE_URL = "sqlite://"
+# Created once: tests like test_noise_cache call the cache functions directly,
+# without the db_session fixture.
+Base.metadata.create_all(bind=database.engine)
 
-engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={
-        "check_same_thread": False
-    },
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# ---------------------------------------------------------------------------
-# Monkey-patch every module that manages its own session or engine.
-#
-# - database_module / cache_module: patch SESSION_LOCAL (their public API).
-# - noise_cache: patch both SESSION_LOCAL and _LOCAL._session_factory so that
-#   all code paths (direct SESSION_LOCAL use and the lazy per-process
-#   _get_session() factory) hit the same test engine. Without both patches,
-#   initCache() creates the table on one engine while queries run against
-#   another, producing "no such table: noise_cache".
-# ---------------------------------------------------------------------------
-import kishin_trails.database as database_module
-import kishin_trails.cache as cache_module
-import kishin_trails.noise_cache as noise_cache_module
+def _truncateAll() -> None:
+    """Empties every table of the game database, and restarts its id sequences.
 
-database_module.SESSION_LOCAL = TestingSessionLocal
-cache_module.SESSION_LOCAL = TestingSessionLocal
+    Code under test commits through its own sessions, so rolling back a
+    transaction around the test would not undo its writes. ``lock_timeout``
+    turns a session left open by a test into an error instead of a hang.
+    """
+    names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
+    with database.engine.begin() as conn:
+        conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+        conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
 
-# Force noise_cache to use our test session factory immediately,
-# bypassing its lazy per-process engine creation entirely.
-noise_cache_module._LOCAL.session_factory = TestingSessionLocal
 
-# Create all tables on the test engine once at collection time.
-# This must happen at module level — not inside a fixture — because tests
-# like test_noise_cache and test_perlin call initCache() / clearCache()
-# directly without going through the db_session fixture. initCache() calls
-# Base.metadata.create_all(bind=<production engine>), which creates tables
-# on the wrong engine. By pre-creating them here on the test engine,
-# all TestingSessionLocal queries find the tables they expect.
-Base.metadata.create_all(bind=engine)
+@pytest.fixture(autouse=True)
+def cleanDatabase():
+    """Each test starts and ends with empty tables, and the tables exist."""
+    Base.metadata.create_all(bind=database.engine)
+    yield
+    _truncateAll()
 
 
 @pytest.fixture(autouse=True)
@@ -84,19 +100,12 @@ def clearLoginThrottle():
 
 @pytest.fixture(scope="function")
 def db_session():
-    """
-    Fixture to provide a clean in-memory database session for each test.
-    """
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
+    """A session on the test database; its tables are emptied after the test."""
+    db = database.SESSION_LOCAL()
     try:
         yield db
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
-        # Recreate immediately so tests that don't use this fixture
-        # (e.g. test_noise_cache, test_perlin) still find their tables.
-        Base.metadata.create_all(bind=engine)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -199,16 +208,17 @@ def health_engine(monkeypatch):
     from kishin_trails.config import settings
     from kishin_trails.plan import optionalHealthConnection
 
-    sqlite = buildHealthEngine()
+    engine = buildHealthEngine()
 
     def override_health_connection():
-        with sqlite.connect() as conn:
+        with engine.connect() as conn:
             yield conn
 
-    monkeypatch.setattr(health, "healthEngine", lambda url, prefix="": sqlite)
+    monkeypatch.setattr(health, "healthEngine", lambda url, prefix="": engine)
     monkeypatch.setattr(settings, "TIMEZONE", "UTC")
     app.dependency_overrides[getHealthConnection] = override_health_connection
     app.dependency_overrides[optionalHealthConnection] = override_health_connection
-    yield sqlite
+    yield engine
     app.dependency_overrides.pop(getHealthConnection, None)
     app.dependency_overrides.pop(optionalHealthConnection, None)
+    engine.dispose()

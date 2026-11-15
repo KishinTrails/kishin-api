@@ -1,21 +1,28 @@
 """
 Tests for the `kishin` CLI: `kishin password`, `kishin gpx import` and
-`kishin db drop-legacy-tables`.
+`kishin db copy-from-sqlite`.
 """
 
 from __future__ import annotations
 
+import datetime
 import stat
 from typing import Callable
 
 import pytest
-from sqlalchemy import inspect, select, text
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 from kishin_trails.cli import app
 from kishin_trails.cli.common import MIN_PASSWORD_LENGTH
-from kishin_trails.models import ExploredTile, Tile
+from kishin_trails.database import Base
+from kishin_trails.models import POI, ExploredTile, NoiseCache, Tile
+from kishin_trails.plan_file import buildPlan
+from kishin_trails.training import ACTIVE_PLAN_ID, ActivePlan, Plan
 from kishin_trails.security import verifyPassword
+
+from plandata import examplePlan
 
 runner = CliRunner()
 
@@ -115,42 +122,75 @@ def test_gpx_import_dry_run_writes_nothing(invokeGpx, db_session, gpxFile):
     assert db_session.scalars(select(ExploredTile)).all() == []
 
 
-# --- db drop-legacy-tables ---------------------------------------------------------
+# --- db copy-from-sqlite -----------------------------------------------------------
 
 
-def _createLegacyTables(db_session) -> None:
-    """The multi-account tables, as an older version created them, with one row each."""
-    db_session.execute(text("DROP TABLE plans"))
-    for statement in (
-        "CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR, hashed_password VARCHAR)",
-        "CREATE TABLE user_explored_tiles (user_id INTEGER, tile_s2_cell_id VARCHAR)",
-        "CREATE TABLE user_active_plans (user_id INTEGER PRIMARY KEY, plan_id INTEGER, start_date DATE)",
-        "CREATE TABLE plans (id INTEGER PRIMARY KEY, name VARCHAR, goal_type VARCHAR, owner_id INTEGER, "
-        "target_fat_ratio FLOAT, target_muscle_mass_kg FLOAT)",
-        "INSERT INTO users VALUES (1, 'foo', 'hash')",
-        "INSERT INTO user_explored_tiles VALUES (1, '89c25a221')",
-    ):
-        db_session.execute(text(statement))
-    db_session.commit()
+@pytest.fixture
+def sqliteFile(tmp_path):
+    """A kishin.db as the SQLite version wrote it: every current table, a few rows, and an
+    old ``users`` table."""
+    path = tmp_path / "kishin.db"
+    source = create_engine(f"sqlite:///{path}")
+    Base.metadata.create_all(source)
+    with Session(source) as session:
+        session.add(Tile(s2_cell_id="89c25a221", tile_type="peak", active=True))
+        session.add(Tile(s2_cell_id="89c25a223", tile_type="natural", active=False))
+        session.flush()
+        session.add(POI(s2_cell_id="89c25a221", osm_id=BIG_OSM_ID, name="Example Peak", lat=48.85, lon=2.35))
+        session.add(ExploredTile(s2_cell_id="89c25a221"))
+        session.add(NoiseCache(s2_cell_id="89c25a221", scale=50, octaves=3, amplitude_decay=0.5, noise_value=0.7))
+        plan = buildPlan(examplePlan())
+        session.add(plan)
+        session.flush()
+        session.add(ActivePlan(id=ACTIVE_PLAN_ID, plan_id=plan.id, start_date=datetime.date(2026, 1, 5)))
+        session.commit()
+    with source.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR)"))
+    source.dispose()
+    return path
 
 
-def test_drop_legacy_tables_keeps_tiles(db_session):
-    db_session.add(Tile(s2_cell_id="89c25a221", tile_type="peak"))
-    db_session.commit()
-    _createLegacyTables(db_session)
+#: An OpenStreetMap id above 2^31, which a PostgreSQL INTEGER cannot hold.
+BIG_OSM_ID = 11_000_000_000
 
-    result = runner.invoke(app, ["db", "drop-legacy-tables", "--yes"])
+
+def test_copy_from_sqlite(db_session, sqliteFile):
+    result = runner.invoke(app, ["db", "copy-from-sqlite", str(sqliteFile)])
     assert result.exit_code == 0, result.output
 
-    inspector = inspect(db_session.get_bind())
-    tables = set(inspector.get_table_names())
-    assert not {"users", "user_explored_tiles", "user_active_plans"} & tables
-    assert "owner_id" not in {column["name"] for column in inspector.get_columns("plans")}
-    assert "active_plan" in tables
-    assert db_session.scalars(select(Tile.s2_cell_id)).all() == ["89c25a221"]
+    tiles = {tile.s2_cell_id: tile.active for tile in db_session.scalars(select(Tile))}
+    assert tiles == {"89c25a221": True, "89c25a223": False}
+    assert db_session.scalars(select(POI.osm_id)).all() == [BIG_OSM_ID]
+    assert db_session.scalars(select(ExploredTile.s2_cell_id)).all() == ["89c25a221"]
+    assert db_session.scalar(select(NoiseCache.noise_value)) == 0.7
+    active = db_session.get(ActivePlan, ACTIVE_PLAN_ID)
+    assert active.start_date == datetime.date(2026, 1, 5)
+    assert active.plan.name == "Example Plan"
+    assert len(active.plan.trainings) == 14
 
 
-def test_drop_legacy_tables_keeps_current_plan_tables(db_session):
-    result = runner.invoke(app, ["db", "drop-legacy-tables", "--yes"])
+def test_copy_from_sqlite_moves_the_id_sequences(db_session, sqliteFile):
+    runner.invoke(app, ["db", "copy-from-sqlite", str(sqliteFile)])
+    copiedId = db_session.scalar(select(Plan.id))
+    newPlan = buildPlan(examplePlan())
+    db_session.add(newPlan)
+    db_session.commit()
+    assert newPlan.id == copiedId + 1
+
+
+def test_copy_from_sqlite_skips_missing_tables(db_session, sqliteFile):
+    with create_engine(f"sqlite:///{sqliteFile}").begin() as conn:
+        conn.execute(text("DROP TABLE active_plan"))
+    result = runner.invoke(app, ["db", "copy-from-sqlite", str(sqliteFile)])
     assert result.exit_code == 0, result.output
-    assert "No legacy tables." in result.output
+    assert "active_plan" in result.output and "not in the file, skipped" in result.output
+    assert db_session.get(ActivePlan, ACTIVE_PLAN_ID) is None
+
+
+def test_copy_from_sqlite_refuses_filled_tables(db_session, sqliteFile):
+    db_session.add(Tile(s2_cell_id="89c25a225", tile_type="peak"))
+    db_session.commit()
+    result = runner.invoke(app, ["db", "copy-from-sqlite", str(sqliteFile)])
+    assert result.exit_code == 1
+    assert "already hold rows: tiles" in result.output
+    assert db_session.scalars(select(Tile.s2_cell_id)).all() == ["89c25a225"]

@@ -8,6 +8,7 @@ import typer
 from sqlalchemy.orm import Session
 
 from kishin_trails import database
+from kishin_trails.config import settings
 
 MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 4096
@@ -27,7 +28,11 @@ def openSession() -> Session:
     replacement of ``SESSION_LOCAL`` (see ``tests/conftest.py``) take effect —
     an import-time ``from kishin_trails.database import SESSION_LOCAL`` would
     bind to whichever factory existed when this module was first imported.
+
+    Fails with a message when DATABASE_URL is not set.
     """
+    if not settings.DATABASE_URL:
+        fail("DATABASE_URL is not set (postgresql+psycopg://user:password@host/kishin).")
     return database.SESSION_LOCAL()
 
 

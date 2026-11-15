@@ -43,12 +43,11 @@ Supported condition types
 * ``cell_must_be_active``  — the single cell in *cells* must be active.
 * ``cell_must_be_inactive``— the single cell in *cells* must be inactive.
 
-Parallel execution and SQLite cache
--------------------------------------
+Parallel execution and the noise cache
+--------------------------------------
 Each worker process calls ``init_engine()`` in its initializer so that every
-process owns its own SQLAlchemy connection pool. Combined with the WAL journal
-mode configured in ``database.py``, this avoids ``database is locked`` errors
-that arise when many processes write to the cache simultaneously.
+process owns its own SQLAlchemy connection pool: a connection is never shared
+across ``fork()``.
 
 The search stops at the *first* satisfying combination found by any worker.
 ``pool.terminate()`` is deferred until after the solution has been captured,
@@ -187,7 +186,7 @@ def testCombination(
 
     Designed for ``multiprocessing.Pool.imap_unordered``. Each worker calls
     ``init_engine()`` in its Pool initializer (see ``search``), so this can
-    safely write to the SQLite cache without sharing connections across
+    safely write to the noise cache without sharing connections across
     processes.
     """
     conditions, scale, threshold, octaves, amplitudeDecay = args

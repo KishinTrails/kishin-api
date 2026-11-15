@@ -2,7 +2,6 @@
 Main entry point for the Kishin API.
 """
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,7 +9,6 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 
 from kishin_trails.database import engine, Base
 from kishin_trails.auth import router as auth_router
@@ -24,20 +22,6 @@ from kishin_trails.config import servingProblems, settings
 
 logger = logging.getLogger(__name__)
 
-_CHECKPOINT_INTERVAL = 24 * 60 * 60  # 24 hours in seconds
-
-
-async def _walCheckpointLoop() -> None:
-    while True:
-        await asyncio.sleep(_CHECKPOINT_INTERVAL)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-            logger.info("WAL checkpoint completed")
-        except Exception:
-            logger.error("WAL checkpoint failed", exc_info=True)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -48,7 +32,6 @@ async def lifespan(app: FastAPI):
       server never signs tokens without SECRET_KEY, whatever command started it
     - Creates all database tables from SQLAlchemy models
     - Initializes the POI cache database tables
-    - Starts a background task that checkpoints the WAL every 24 hours
 
     Yields control back to FastAPI to run the application, then handles
     cleanup on shutdown (if needed in the future).
@@ -58,13 +41,7 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Cannot serve: " + " ".join(problems))
     Base.metadata.create_all(bind=engine)
     initCacheDb()
-    checkpoint_task = asyncio.create_task(_walCheckpointLoop())
     yield
-    checkpoint_task.cancel()
-    try:
-        await checkpoint_task
-    except asyncio.CancelledError:
-        pass
 
 
 app = FastAPI(
