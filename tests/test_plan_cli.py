@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from kishin_trails.cli import app
+from kishin_trails.database import Base
 from kishin_trails.models import User
 from kishin_trails.training import Plan, TrainingCompletion, UserActivePlan
 
@@ -111,3 +112,11 @@ def test_delete(db_session, owner, planFile):
 
 def test_delete_unknown_plan(db_session):
     assert runner.invoke(app, ["plan", "delete", "42", "--yes"]).exit_code == 1
+
+
+def test_commands_create_missing_tables(db_session, owner, planFile):
+    for name in ("training_completions", "user_active_plans"):
+        Base.metadata.tables[name].drop(bind=db_session.get_bind())
+    result = _import(planFile)
+    assert result.exit_code == 0, result.output
+    assert db_session.get(UserActivePlan, owner.id) is not None

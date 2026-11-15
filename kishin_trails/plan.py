@@ -2,7 +2,8 @@
 Training plan router: the active plan's progression and manual completion.
 
 A run is completed by linking a Garmin activity and entering an RPE (wiki
-"Athlete Integration" §6); cross-training, leg day and yoga are ticked. The plan
+"Athlete Integration" §6). Any running activity of the training's week is
+accepted, whatever its distance or duration. Cross-training, leg day and yoga are ticked. The plan
 itself is imported from a local file with ``kishin plan import``; no route
 creates or edits plans. Willpower is not computed here.
 """
@@ -46,10 +47,6 @@ router = APIRouter(prefix="/plan", tags=["plan"], dependencies=[Depends(getCurre
 #: GarminDB sport of the activities that can complete a run.
 RUNNING_SPORT = "running"
 
-#: Fraction of a distance target that completes a distance-based run (§6).
-DISTANCE_COMPLETION_RATIO = 0.9
-
-
 def optionalHealthConnection() -> Iterator[Connection | None]:
     """FastAPI dependency: a health database connection, or None when it is not configured or not reachable."""
     try:
@@ -79,20 +76,6 @@ def weekRange(startDate: datetime.date, weekNumber: int) -> tuple[datetime.date,
 def trainingTargets(training: Training) -> tuple[float | None, int | None]:
     """Distance (km) and duration (s) targets of a training, None when it has none of that kind."""
     return training.total_distance_km or None, training.total_duration_sec or None
-
-
-def completionProblem(training: Training, activity: health.Activity) -> str | None:
-    """Why an activity does not complete a run under §6, or None when it does."""
-    distanceKm, durationSec = trainingTargets(training)
-    if distanceKm is not None:
-        needed = distanceKm * DISTANCE_COMPLETION_RATIO
-        if activity.distance_km is None or activity.distance_km < needed:
-            return f"The activity covers {activity.distance_km or 0:.2f} km; at least {needed:.2f} km is needed."
-    if durationSec is not None:
-        if activity.moving_sec is None or activity.moving_sec < durationSec:
-            minutes = (activity.moving_sec or 0) / 60
-            return f"The activity has {minutes:.0f} min of moving time; at least {durationSec / 60:.0f} min is needed."
-    return None
 
 
 def activePlan(session: Session, user: User) -> tuple[UserActivePlan, Plan] | None:
@@ -163,7 +146,10 @@ def _weeklyRunning(conn: Connection, startDate: datetime.date, weekCount: int) -
         datetime.datetime.combine(last + datetime.timedelta(days=1), datetime.time.min),
         RUNNING_SPORT,
     )
-    weeks = {number: WeekRunningOut(run_count=0, run_km=0.0, longest_run_km=None) for number in range(1, weekCount + 1)}
+    weeks = {
+        number: WeekRunningOut(run_count=0, run_km=0.0, run_moving_sec=0, longest_run_km=None)
+        for number in range(1, weekCount + 1)
+    }
     for run in runs:
         if run.start_time is None:
             continue
@@ -174,6 +160,7 @@ def _weeklyRunning(conn: Connection, startDate: datetime.date, weekCount: int) -
         km = run.distance_km or 0.0
         week.run_count += 1
         week.run_km += km
+        week.run_moving_sec += run.moving_sec or 0
         week.longest_run_km = max(week.longest_run_km or 0.0, km)
     return weeks
 
@@ -277,8 +264,8 @@ def getCandidates(
     "/trainings/{training_id}/complete",
     summary="Mark a training done",
     description=(
-        "A run takes a Garmin activity and an RPE, and is accepted when the activity reaches 90% of the distance "
-        "target or the full duration target (moving time). A tick item takes neither."
+        "A run takes a Garmin activity and an RPE; any distance or duration is accepted. "
+        "A tick item takes neither."
     ),
     response_model=PlanTrainingOut,
     status_code=status.HTTP_201_CREATED,
@@ -317,9 +304,6 @@ def completeTraining(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="The activity already completes another training."
             )
-        problem = completionProblem(training, activity)
-        if problem is not None:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=problem)
 
     training.completion = TrainingCompletion(
         completed_at=datetime.datetime.now(datetime.UTC).replace(tzinfo=None),

@@ -69,6 +69,8 @@ async def test_progression(authenticated_client: AsyncClient, health_engine, pla
     assert week1["trainings"][2]["is_tick"] is True
     assert all(training["completion"] is None for training in week1["trainings"])
     assert week1["running"]["longest_run_km"] == 14.0
+    in1001 = START <= (NOW - datetime.timedelta(days=2)).date()
+    assert week1["running"]["run_moving_sec"] == 95 * 60 + (31 * 60 if in1001 else 0)
 
 
 async def test_progression_without_health(authenticated_client: AsyncClient, plan):
@@ -132,8 +134,6 @@ async def test_complete_a_tick_item_and_undo(authenticated_client: AsyncClient, 
 @pytest.mark.parametrize(
     ("position", "body", "status", "detail"),
     [
-        (1, {"activity_id": "1001", "rpe": 4}, 422, "at least 11.70 km is needed"),
-        (2, {"activity_id": "1004", "rpe": 4}, 422, "at least 30 min is needed"),
         (1, {"activity_id": "1002"}, 422, "A run needs an activity and an RPE."),
         (1, {"activity_id": "42", "rpe": 4}, 404, "Activity not found."),
         (3, {"activity_id": "1002", "rpe": 4}, 422, "A tick item takes no activity and no RPE."),
@@ -152,9 +152,11 @@ async def test_rpe_out_of_range(authenticated_client: AsyncClient, health_engine
     assert response.status_code == 422
 
 
-async def test_fundamental_run_on_moving_time(authenticated_client: AsyncClient, health_engine, plan):
+@pytest.mark.parametrize(("position", "activityId"), [(1, "1001"), (2, "1004")])
+async def test_any_run_completes_a_run(authenticated_client: AsyncClient, health_engine, plan, position, activityId):
+    """Activity 1001 is shorter than the 13 km target and 1004 shorter than the 30 min target."""
     response = await authenticated_client.post(
-        f"/plan/trainings/{_training(plan, 1, 2)}/complete", json={"activity_id": "1001", "rpe": 3}
+        f"/plan/trainings/{_training(plan, 1, position)}/complete", json={"activity_id": activityId, "rpe": 3}
     )
     assert response.status_code == 201
 

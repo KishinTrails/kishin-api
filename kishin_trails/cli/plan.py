@@ -20,6 +20,7 @@ from typing import Annotated
 import typer
 from sqlalchemy import select
 
+from kishin_trails.database import Base
 from kishin_trails.models import User
 from kishin_trails.plan_file import PlanFileError, readPlanFile
 from kishin_trails.training import Plan, UserActivePlan
@@ -28,6 +29,17 @@ from kishin_trails.training_types import TICK_TYPES
 from .common import fail, openSession
 
 app = typer.Typer(help="Training plans.", no_args_is_help=True)
+
+
+@app.callback()
+def createTables() -> None:
+    """Training plans.
+
+    Every command first creates the tables that are missing, as the server does
+    at startup, so a database created before the plan tables existed works.
+    """
+    with openSession() as session:
+        Base.metadata.create_all(bind=session.get_bind())
 
 
 @app.command("import")

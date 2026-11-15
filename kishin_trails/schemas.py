@@ -392,6 +392,7 @@ class WeekRunningOut(BaseModel):
 
     run_count: int
     run_km: float
+    run_moving_sec: int
     longest_run_km: float | None
 
 
