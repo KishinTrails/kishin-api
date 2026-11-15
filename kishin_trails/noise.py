@@ -10,10 +10,10 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 
 from kishin_trails.perlin import getNoiseForCell
-from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.dependencies import requireLogin
 from kishin_trails.schemas import NoiseRequest, NoiseResponse
 
-router = APIRouter(prefix="/noise", tags=["noise"], dependencies=[Depends(getCurrentUser)])
+router = APIRouter(prefix="/noise", tags=["noise"], dependencies=[Depends(requireLogin)])
 
 
 @router.post("/cells", response_model=List[NoiseResponse])

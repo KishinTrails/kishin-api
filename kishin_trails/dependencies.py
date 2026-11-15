@@ -2,38 +2,28 @@
 Shared dependencies for the Kishin API.
 """
 
+import hmac
 from typing import Annotated
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
 
 from kishin_trails.config import settings
-from kishin_trails.database import getDb
-from kishin_trails.models import User
-from kishin_trails.schemas import TokenData
 
-# Token location is /auth/login (to be defined in auth.py)
+# Token location is /auth/login (see auth.py)
 oauth2Scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 
-def getCurrentUser(
-    token: Annotated[str, Depends(oauth2Scheme)],
-    dbSession: Annotated[Session, Depends(getDb)],
-) -> User:
+def requireLogin(token: Annotated[str, Depends(oauth2Scheme)]) -> None:
     """
-    Authenticate a user by verifying their JWT token.
+    Accept a request only with a valid JWT issued to the configured account.
 
     Args:
         token: The JWT access token.
-        dbSession: The database session.
-
-    Returns:
-        The authenticated User model instance.
 
     Raises:
-        HTTPException 401: If the token is invalid or the user is not found.
+        HTTPException 401: If the token is invalid or expired, or its subject is not ``KISHIN_USERNAME``.
     """
     credentialsException = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -42,14 +32,11 @@ def getCurrentUser(
     )
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
-            raise credentialsException
-        tokenData = TokenData(username=username)
-    except jwt.PyJWTError:
-        raise credentialsException
+    except jwt.PyJWTError as error:
+        raise credentialsException from error
 
-    user = dbSession.query(User).filter(User.username == tokenData.username).first()
-    if user is None:
+    subject = payload.get("sub")
+    if not settings.KISHIN_USERNAME or not isinstance(subject, str):
         raise credentialsException
-    return user
+    if not hmac.compare_digest(subject.encode(), settings.KISHIN_USERNAME.encode()):
+        raise credentialsException

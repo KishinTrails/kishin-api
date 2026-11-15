@@ -20,8 +20,8 @@ from sqlalchemy.pool import StaticPool
 
 from kishin_trails.main import app
 from kishin_trails.database import Base, getDb
-from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.models import User, Tile, POI
+from kishin_trails.dependencies import requireLogin
+from kishin_trails.models import Tile, POI
 
 # ---------------------------------------------------------------------------
 # Single shared in-memory engine for the entire test session.
@@ -107,21 +107,14 @@ async def client(db_session):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def authenticated_client(client, db_session):
+async def authenticated_client(client):
     """
     Fixture that provides an authenticated client for testing protected routes.
-    Overrides getCurrentUser to return a mock test user.
+    Overrides requireLogin so that every request is accepted.
     """
-    test_user = User(id=1, username="testuser", hashed_password="dummy_hash")
-    db_session.add(test_user)
-    db_session.commit()
-
-    def override_get_current_user():
-        return test_user
-
-    app.dependency_overrides[getCurrentUser] = override_get_current_user
+    app.dependency_overrides[requireLogin] = lambda: None
     yield client
-    app.dependency_overrides.pop(getCurrentUser, None)
+    app.dependency_overrides.pop(requireLogin, None)
 
 
 @pytest.fixture(scope="function")

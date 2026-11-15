@@ -3,8 +3,8 @@ SQLAlchemy models for training plans.
 
 A Segment is one effort block of a run. A Training is one item of a week: a run
 made of segments, or an item the player ticks. A PlanWeek gives a week its phase.
-A Plan is an ordered list of weeks and trainings. UserActivePlan records which
-plan a user follows and since when. A TrainingCompletion records that a training
+A Plan is an ordered list of weeks and trainings. ActivePlan, a single row,
+records which plan the player follows and since when. A TrainingCompletion records that a training
 is done: a run with the Garmin activity and RPE that completed it, a tick item
 alone.
 
@@ -32,13 +32,12 @@ from kishin_trails.training_types import (
 
 
 class Plan(Base):
-    """An ordered collection of weeks and trainings, owned by one user.
+    """An ordered collection of weeks and trainings.
 
     Attributes:
         id: Primary key.
         name: Human-readable name.
         goal_type: Label of the plan's goal. The allowed values are not decided.
-        owner_id: User who owns the plan.
         target_fat_ratio: Body fat percentage to reach by the end of the plan.
         target_muscle_mass_kg: Muscle mass in kg to reach by the end of the plan.
         weeks: One PlanWeek per week.
@@ -50,7 +49,6 @@ class Plan(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     goal_type: Mapped[str | None] = mapped_column(String)
-    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     target_fat_ratio: Mapped[float | None] = mapped_column(Float)
     target_muscle_mass_kg: Mapped[float | None] = mapped_column(Float)
 
@@ -231,22 +229,28 @@ class TrainingCompletion(Base):
     __table_args__ = (CheckConstraint("rpe IS NULL OR rpe BETWEEN 1 AND 10", name="ck_completion_rpe"),)
 
 
-class UserActivePlan(Base):
-    """The plan a user follows, and the Monday it started.
+#: Primary key of the only ActivePlan row.
+ACTIVE_PLAN_ID = 1
+
+
+class ActivePlan(Base):
+    """The plan the player follows, and the Monday it started. The table holds at most one row.
 
     Attributes:
-        user_id: The user; one active plan per user.
+        id: Always ``ACTIVE_PLAN_ID`` (1); the check constraint keeps the table to one row.
         plan_id: The plan followed.
         start_date: The Monday the plan began.
     """
 
-    __tablename__ = "user_active_plans"
+    __tablename__ = "active_plan"
 
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     plan_id: Mapped[int] = mapped_column(Integer, ForeignKey("plans.id"), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     plan: Mapped[Plan] = relationship("Plan")
+
+    __table_args__ = (CheckConstraint("id = 1", name="ck_active_plan_single_row"),)
 
     def currentWeek(self, today: date) -> int:
         """Week of the plan that contains ``today`` (1-indexed)."""

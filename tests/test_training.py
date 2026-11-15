@@ -7,15 +7,15 @@ from datetime import date
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from kishin_trails.models import User
 from kishin_trails.training import (
+    ACTIVE_PLAN_ID,
+    ActivePlan,
     Plan,
     PlanWeek,
     Segment,
     SegmentType,
     Training,
     TrainingType,
-    UserActivePlan,
     WeekPhase,
     planProblems,
 )
@@ -51,18 +51,9 @@ def _week(weekNumber: int, longRunKm: float) -> list[Training]:
 
 
 @pytest.fixture
-def owner(db_session) -> User:
-    user = User(username="foo", hashed_password="dummy_hash")
-    db_session.add(user)
-    db_session.commit()
-    return user
-
-
-@pytest.fixture
-def plan(db_session, owner) -> Plan:
+def plan(db_session) -> Plan:
     examplePlan = Plan(
         name="Example Plan",
-        owner_id=owner.id,
         target_fat_ratio=20.0,
         target_muscle_mass_kg=40.0,
         weeks=[PlanWeek(week_number=1, phase=WeekPhase.BASE)],
@@ -201,16 +192,22 @@ def test_deleting_plan_deletes_children(db_session, plan):
     ],
 )
 def test_current_week(today, expected):
-    active = UserActivePlan(user_id=1, plan_id=1, start_date=date(2026, 1, 5))
+    active = ActivePlan(plan_id=1, start_date=date(2026, 1, 5))
     assert active.currentWeek(today) == expected
 
 
-def test_user_active_plan_round_trip(db_session, owner, plan):
-    db_session.add(UserActivePlan(user_id=owner.id, plan_id=plan.id, start_date=date(2026, 1, 5)))
+def test_active_plan_round_trip(db_session, plan):
+    db_session.add(ActivePlan(plan_id=plan.id, start_date=date(2026, 1, 5)))
     db_session.commit()
     db_session.expire_all()
-    active = db_session.get(UserActivePlan, owner.id)
+    active = db_session.get(ActivePlan, ACTIVE_PLAN_ID)
     assert active.plan.name == "Example Plan"
+
+
+def test_active_plan_holds_one_row(db_session, plan):
+    db_session.add(ActivePlan(id=2, plan_id=plan.id, start_date=date(2026, 1, 5)))
+    with pytest.raises(IntegrityError):
+        db_session.commit()
 
 
 def test_plan_problems_valid(plan):

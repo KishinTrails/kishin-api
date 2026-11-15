@@ -16,15 +16,15 @@
 
 ---
 
-Backend API service for the Kishin Trails project, providing OSM data integration, user authentication, and geo-spatial operations with S2 cell fog-of-war mechanics.
+Backend API service for the Kishin Trails project, providing OSM data integration, login for its single account, and geo-spatial operations with S2 cell fog-of-war mechanics.
 
 ## Features
 
-- **User Authentication** - JWT-based login; accounts are created with the `kishin` CLI, not over HTTP
+- **Single account** - JWT-based login for one account, configured by `KISHIN_USERNAME` and `KISHIN_PASSWORD_HASH`
 - **POI Discovery** - Points of interest from OpenStreetMap (peaks, natural areas, industrial zones)
 - **S2 Geospatial Indexing** - Google's S2 geometry library for location-based queries
-- **Exploration Tracking** - Track user-explored S2 cells for fog-of-war mechanics
-- **`kishin` CLI** - Account administration, database maintenance, GPX import, cache population, and geo/noise debugging
+- **Exploration Tracking** - Track the explored S2 cells for fog-of-war mechanics
+- **`kishin` CLI** - The account's password, database maintenance, GPX import, cache population, and geo/noise debugging
 
 ## Prerequisites
 
@@ -47,6 +47,10 @@ Create a `.env` file in the project root.
 **Required variables:**
 - `SECRET_KEY` - For JWT token signing
 - `DATABASE_URL` - Database connection string
+- `KISHIN_USERNAME` - Username of the only account
+- `KISHIN_PASSWORD_HASH` - Argon2 hash of its password. Read from the file
+  `/run/secrets/KISHIN_PASSWORD_HASH`, or `dev-secrets/KISHIN_PASSWORD_HASH` for a local run
+  (git-ignored); `kishin password` writes it
 
 ### Run Development Server
 
@@ -69,20 +73,15 @@ These provide comprehensive, always-up-to-date documentation of all available en
 Installed as a console script by `poetry install`; run `poetry run kishin --help` for
 the full command tree, or `poetry run kishin <group> --help` for one group.
 
-### `kishin user` - Account Administration
+### `kishin password` - The Account's Password
 
-The only way to create an account — `POST /auth/register` does not exist.
+Prompts for a password twice and writes its Argon2 hash to the file, readable by its owner
+only. The server reads it at startup.
 
 ```bash
-poetry run kishin user list
-poetry run kishin user create alice [--password '...']
-poetry run kishin user show alice [--tiles]
-poetry run kishin user reset-password alice [--password '...']
-poetry run kishin user rename alice alicia
-poetry run kishin user delete alice [--yes]
+mkdir -p dev-secrets
+poetry run kishin password dev-secrets/KISHIN_PASSWORD_HASH
 ```
-
-Omit `--password` on `create`/`reset-password` and one is generated and printed once.
 
 ### `kishin db` - Database Maintenance
 
@@ -90,14 +89,15 @@ Omit `--password` on `create`/`reset-password` and one is generated and printed 
 poetry run kishin db init         # create any missing tables
 poetry run kishin db stats        # row counts per table
 poetry run kishin db checkpoint   # run a WAL checkpoint now
+poetry run kishin db drop-legacy-tables [--yes]   # drop the tables of the multi-account schema
 ```
 
 ### `kishin gpx import` - Import GPX Tracks
 
-Import a GPX file and mark its S2 cells as explored for a user.
+Import a GPX file and mark its S2 cells as explored.
 
 ```bash
-poetry run kishin gpx import <gpx_file> --user <username> [--resolution 16] [--dry-run]
+poetry run kishin gpx import <gpx_file> [--resolution 16] [--dry-run]
 ```
 
 ### `kishin geo` - Debug Geo/S2/Overpass Utilities

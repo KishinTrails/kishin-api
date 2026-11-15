@@ -14,10 +14,9 @@ import pytest
 from httpx import AsyncClient
 
 from kishin_trails.main import app
-from kishin_trails.models import User
 from kishin_trails.plan import optionalHealthConnection
 from kishin_trails.plan_file import buildPlan
-from kishin_trails.training import Plan, UserActivePlan
+from kishin_trails.training import ActivePlan, Plan
 
 from healthdata import NOW
 from plandata import examplePlan
@@ -29,12 +28,12 @@ START = LONG_RUN_DAY - datetime.timedelta(days=LONG_RUN_DAY.weekday())
 
 
 @pytest.fixture
-def plan(db_session, authenticated_client) -> Plan:
-    """The example plan, active for the logged-in test user (id 1)."""
-    examplePlanRow = buildPlan(examplePlan(), ownerId=1)
+def plan(db_session) -> Plan:
+    """The example plan, active."""
+    examplePlanRow = buildPlan(examplePlan())
     db_session.add(examplePlanRow)
     db_session.flush()
-    db_session.add(UserActivePlan(user_id=1, plan_id=examplePlanRow.id, start_date=START))
+    db_session.add(ActivePlan(plan_id=examplePlanRow.id, start_date=START))
     db_session.commit()
     return examplePlanRow
 
@@ -172,12 +171,6 @@ async def test_one_activity_completes_one_training(authenticated_client: AsyncCl
     assert second.status_code == 409
 
 
-async def test_other_users_training(authenticated_client: AsyncClient, health_engine, db_session):
-    other = User(username="bar", hashed_password="dummy_hash")
-    db_session.add(other)
-    db_session.flush()
-    otherPlan = buildPlan(examplePlan(), ownerId=other.id)
-    db_session.add(otherPlan)
-    db_session.commit()
-    response = await authenticated_client.post(f"/plan/trainings/{otherPlan.trainings[2].id}/complete", json={})
+async def test_unknown_training(authenticated_client: AsyncClient, health_engine):
+    response = await authenticated_client.post("/plan/trainings/42/complete", json={})
     assert response.status_code == 404

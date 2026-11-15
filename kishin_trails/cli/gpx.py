@@ -1,8 +1,8 @@
 """
 ``kishin gpx`` — importing recorded trails.
 
-    kishin gpx import activity.gpx --user alice
-    kishin gpx import activity.gpx --user alice --resolution 16 --dry-run
+    kishin gpx import activity.gpx
+    kishin gpx import activity.gpx --resolution 16 --dry-run
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import gpx
 import typer
 from sqlalchemy import select
 
-from kishin_trails.models import Tile, User
+from kishin_trails.models import ExploredTile, Tile
 from kishin_trails.utils import latLngToS2Cell
 
 from .common import fail, openSession
@@ -35,11 +35,10 @@ def _getOrCreateTile(session, s2Cell: str) -> Tile:
 @app.command("import")
 def importGpx(
     gpxFile: Annotated[Path, typer.Argument(help="Path to the GPX file", exists=True, dir_okay=False)],
-    user: Annotated[str, typer.Option("--user", "-u", help="Username to mark the tiles explored for")],
     resolution: Annotated[int, typer.Option("--resolution", "-r", help="S2 level (0-30)")] = 16,
     dryRun: Annotated[bool, typer.Option("--dry-run", help="Print the tiles without touching the database")] = False,
 ) -> None:
-    """Mark every S2 cell a GPX track passes through as explored for a user."""
+    """Mark every S2 cell a GPX track passes through as explored."""
     if not 0 <= resolution <= 30:
         fail(f"Invalid S2 level: {resolution} (must be 0-30).")
 
@@ -59,16 +58,11 @@ def importGpx(
         return
 
     with openSession() as session:
-        account = session.scalar(select(User).where(User.username == user))
-        if account is None:
-            fail(f'No account found for "{user}".')
-            return  # unreachable; fail() exits, and this tells the type checker so
-
         for s2Cell in tiles:
             tile = _getOrCreateTile(session, s2Cell)
-            if tile not in account.explored_tiles:
-                account.explored_tiles.append(tile)
+            if tile.explored is None:
+                tile.explored = ExploredTile()
 
         session.commit()
 
-    typer.secho(f"[OK] Marked {len(tiles)} tile(s) as explored by {user}.", fg=typer.colors.GREEN)
+    typer.secho(f"[OK] Marked {len(tiles)} tile(s) as explored.", fg=typer.colors.GREEN)

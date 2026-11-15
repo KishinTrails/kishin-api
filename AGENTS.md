@@ -1,7 +1,7 @@
 # Kishin API - Developer Guide for Agents
 
 ## Project Overview
-FastAPI server for the Kishin project, handling OSM data via Overpass API, user authentication, and geo-spatial operations.
+FastAPI server for the Kishin project, handling OSM data via Overpass API, login for its single account, and geo-spatial operations.
 
 ## Build & Test Commands
 
@@ -53,7 +53,7 @@ poetry shell
 
 ### Naming Conventions
 - Files: lowercase with underscores (`overpass.py`, `auth.py`)
-- Classes: PascalCase (`User`, `Base`, `Settings`)
+- Classes: PascalCase (`Tile`, `Base`, `Settings`)
 - Functions/variables: camelCase (`getPasswordHash`, `buildBbox`)
 - Constants: UPPER_CASE (`DATABASE_URL`, `OVERPASS_URL`)
 - Modules with "test": `test_<module>.py`

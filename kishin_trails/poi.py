@@ -14,7 +14,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, Point
 from kishin_trails.cache import getTile, setTile, getAllActiveTiles
 from kishin_trails.config import settings
 from kishin_trails.utils import sanitizeValue, pointInS2Cell, getS2CellCenter, getS2CellBounds
-from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.dependencies import requireLogin
 from kishin_trails.overpass import loadElementsAtBounds
 
 logger = logging.getLogger("PoI")
@@ -22,7 +22,7 @@ logger = logging.getLogger("PoI")
 DEFAULT_CENTER_LAT = settings.DEFAULT_CENTER_LAT
 DEFAULT_CENTER_LON = settings.DEFAULT_CENTER_LON
 
-router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(getCurrentUser)])
+router = APIRouter(prefix="/poi", tags=["poi"], dependencies=[Depends(requireLogin)])
 
 
 class PoI:

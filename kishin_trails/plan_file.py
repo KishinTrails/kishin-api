@@ -113,7 +113,7 @@ def _segment(position: int, segment: SegmentIn) -> Segment:
     )
 
 
-def buildPlan(data: object, ownerId: int) -> Plan:
+def buildPlan(data: object) -> Plan:
     """Builds an unsaved Plan from decoded JSON.
 
     Raises:
@@ -129,7 +129,6 @@ def buildPlan(data: object, ownerId: int) -> Plan:
     plan = Plan(
         name=planIn.name,
         goal_type=planIn.goal_type,
-        owner_id=ownerId,
         target_fat_ratio=planIn.target_fat_ratio,
         target_muscle_mass_kg=planIn.target_muscle_mass_kg,
     )
@@ -151,7 +150,7 @@ def buildPlan(data: object, ownerId: int) -> Plan:
     return plan
 
 
-def readPlanFile(path: Path, ownerId: int) -> Plan:
+def readPlanFile(path: Path) -> Plan:
     """Reads and checks a plan file.
 
     Raises:
@@ -163,4 +162,4 @@ def readPlanFile(path: Path, ownerId: int) -> Plan:
         raise PlanFileError([f"cannot read {path}: {error.strerror}"]) from error
     except json.JSONDecodeError as error:
         raise PlanFileError([f"{path} is not JSON: {error.msg} at line {error.lineno}"]) from error
-    return buildPlan(data, ownerId)
+    return buildPlan(data)

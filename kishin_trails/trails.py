@@ -1,18 +1,18 @@
 """
-Trails module for user exploration tracking.
+Trails module: the S2 cells the player has explored.
 
-Provides API endpoints for managing and retrieving user-explored S2 cells,
-allowing users to track their exploration progress across the map.
+Provides API endpoints to list the explored cells and to mark new ones.
 """
 
 import logging
 from typing import TYPE_CHECKING
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kishin_trails.database import getDb
-from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.models import User
+from kishin_trails.dependencies import requireLogin
+from kishin_trails.models import ExploredTile, Tile
 import s2geometry as s2
 
 from kishin_trails.schemas import AddExploredTilesRequest, AddExploredTilesResult, ExploredTilesOut, SkippedCell
@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover
     APIRouter = None  # type: ignore[assignment]
 
 if APIRouter:
-    router = APIRouter(prefix="/trails", tags=["trails"], dependencies=[Depends(getCurrentUser)])
+    router = APIRouter(prefix="/trails", tags=["trails"], dependencies=[Depends(requireLogin)])
 else:
     router = None
 
@@ -36,27 +36,22 @@ if router:
 
     @router.get(
         "/explored",
-        summary="Get explored tiles for current user",
+        summary="Get the explored tiles",
         response_model=ExploredTilesOut,
     )
-    def getExploredTiles(
-        currentUser: User = Depends(getCurrentUser),
-        _dbSession: Session = Depends(getDb),
-    ):
+    def getExploredTiles(dbSession: Session = Depends(getDb)):
         """
-        Retrieve all S2 cells marked as explored by the authenticated user.
+        Retrieve all S2 cells marked as explored.
 
-        This endpoint returns the complete list of S2 cell identifiers
-        that the user has explored, typically populated via GPX track imports.
+        The cells come from GPX track imports and from POST /trails/explored.
 
         Args:
-            currentUser: The authenticated user from JWT token.
-            _dbSession: Database session for querying.
+            dbSession: Database session for querying.
 
         Returns:
             Dictionary containing a list of explored S2 cell identifiers.
         """
-        explored = [tile.s2_cell_id for tile in currentUser.explored_tiles]
+        explored = list(dbSession.scalars(select(ExploredTile.s2_cell_id)))
         return {
             "explored": explored
         }
@@ -68,18 +63,16 @@ if router:
     )
     def addExploredTiles(
         request: AddExploredTilesRequest,
-        currentUser: User = Depends(getCurrentUser),
         dbSession: Session = Depends(getDb),
     ):
         """
-        Mark S2 cells as explored by the authenticated user.
+        Mark S2 cells as explored.
 
         Validates each cell, filters out already explored ones,
         and only marks tiles that exist in the database.
 
         Args:
             request: Contains list of S2 cell tokens to mark as explored.
-            currentUser: The authenticated user from JWT token.
             dbSession: Database session for querying and updating.
 
         Returns:
@@ -87,8 +80,6 @@ if router:
         """
         if len(request.cells) > 100:
             request.cells = request.cells[:100]
-
-        from kishin_trails.models import Tile
 
         added: list[str] = []
         skipped: list[SkippedCell] = []
@@ -108,17 +99,16 @@ if router:
                 skipped.append(SkippedCell(cell=cellToken, reason="not_found"))
                 continue
 
-            if tile in currentUser.explored_tiles:
+            if tile.explored is not None:
                 continue
 
-            currentUser.explored_tiles.append(tile)
+            tile.explored = ExploredTile()
             added.append(cellToken)
 
         dbSession.commit()
 
         logger.info(
-            "POST /trails/explored — user: %s, added: %d, skipped: %d",
-            currentUser.username,
+            "POST /trails/explored — added: %d, skipped: %d",
             len(added),
             len(skipped),
         )

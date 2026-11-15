@@ -1,91 +1,100 @@
 """
-Security and Authentication tests for Kishin API.
+Security and Authentication tests for Kishin API: the single account configured
+by KISHIN_USERNAME and KISHIN_PASSWORD_HASH.
 """
+
+import datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.orm import Session
 
-from kishin_trails.models import User
-from kishin_trails.security import getPasswordHash
+from kishin_trails.config import settings
+from kishin_trails.security import createAccessToken, getPasswordHash
 
-TEST_USERNAME = "testuser"
+TEST_USERNAME = "foo"
 TEST_PASSWORD = "testpassword"
+
+PROTECTED_ROUTE = "/trails/explored"
 
 # Fixtures 'client' and 'db_session' are automatically loaded from conftest.py
 
 
-def createUser(db_session: Session, username: str, password: str) -> User:
-    user = User(username=username, hashed_password=getPasswordHash(password))
-    db_session.add(user)
-    db_session.commit()
-    return user
+@pytest.fixture
+def account(monkeypatch):
+    """Configures the account foo / testpassword."""
+    monkeypatch.setattr(settings, "KISHIN_USERNAME", TEST_USERNAME)
+    monkeypatch.setattr(settings, "KISHIN_PASSWORD_HASH", getPasswordHash(TEST_PASSWORD))
+
+
+async def _login(client: AsyncClient, username: str, password: str):
+    return await client.post("/auth/login", data={"username": username, "password": password})
 
 
 @pytest.mark.asyncio
-async def test_login_succeeds(client: AsyncClient, db_session: Session):
-    createUser(db_session, TEST_USERNAME, TEST_PASSWORD)
-    response = await client.post(
-        "/auth/login",
-        data={
-            "username": TEST_USERNAME,
-            "password": TEST_PASSWORD
-        },
-    )
+async def test_login_succeeds(client: AsyncClient, account):
+    response = await _login(client, TEST_USERNAME, TEST_PASSWORD)
     assert response.status_code == 200
-    result = response.json()
-    assert "access_token" in result
+    assert "access_token" in response.json()
 
 
 @pytest.mark.asyncio
-async def test_login_fails_invalid_credentials(client: AsyncClient, db_session: Session):
-    createUser(db_session, TEST_USERNAME, TEST_PASSWORD)
-    response = await client.post(
-        "/auth/login",
-        data={
-            "username": TEST_USERNAME,
-            "password": "wrongpassword"
-        },
-    )
+@pytest.mark.parametrize(("username", "password"), [(TEST_USERNAME, "wrongpassword"), ("bar", TEST_PASSWORD)])
+async def test_login_fails_invalid_credentials(client: AsyncClient, account, username, password):
+    response = await _login(client, username, password)
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_login_refused_without_a_configured_account(client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(settings, "KISHIN_USERNAME", "")
+    monkeypatch.setattr(settings, "KISHIN_PASSWORD_HASH", "")
+    response = await _login(client, TEST_USERNAME, TEST_PASSWORD)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_password_hash_with_a_trailing_newline(client: AsyncClient, account, monkeypatch):
+    monkeypatch.setattr(settings, "KISHIN_PASSWORD_HASH", getPasswordHash(TEST_PASSWORD) + "\n")
+    response = await _login(client, TEST_USERNAME, TEST_PASSWORD)
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_protected_route_requires_auth(client: AsyncClient):
-    response = await client.get("/me")
+    response = await client.get(PROTECTED_ROUTE)
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_protected_route_succeeds_with_token(client: AsyncClient, db_session: Session):
-    createUser(db_session, TEST_USERNAME, TEST_PASSWORD)
-    login_res = await client.post(
-        "/auth/login",
-        data={
-            "username": TEST_USERNAME,
-            "password": TEST_PASSWORD
-        },
-    )
-    token = login_res.json()["access_token"]
-
-    response = await client.get(
-        "/me",
-        headers={
-            "Authorization": f"Bearer {token}"
-        },
-    )
+async def test_protected_route_succeeds_with_token(client: AsyncClient, account):
+    token = (await _login(client, TEST_USERNAME, TEST_PASSWORD)).json()["access_token"]
+    response = await client.get(PROTECTED_ROUTE, headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    result = response.json()
-    assert result["username"] == TEST_USERNAME
+
+
+@pytest.mark.asyncio
+async def test_token_of_another_username_is_refused(client: AsyncClient, account):
+    token = createAccessToken({"sub": "bar"})
+    response = await client.get(PROTECTED_ROUTE, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_token_after_a_username_change_is_refused(client: AsyncClient, account, monkeypatch):
+    token = (await _login(client, TEST_USERNAME, TEST_PASSWORD)).json()["access_token"]
+    monkeypatch.setattr(settings, "KISHIN_USERNAME", "bar")
+    response = await client.get(PROTECTED_ROUTE, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_expired_token_is_refused(client: AsyncClient, account):
+    token = createAccessToken({"sub": TEST_USERNAME}, expiresDelta=datetime.timedelta(minutes=-1))
+    response = await client.get(PROTECTED_ROUTE, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_registration_is_restricted(client: AsyncClient):
-    response = await client.post(
-        "/auth/register",
-        json={
-            "username": "intruder",
-            "password": "somepassword"
-        },
-    )
+    response = await client.post("/auth/register", json={"username": "bar", "password": "somepassword"})
     assert response.status_code == 404

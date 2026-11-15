@@ -2,8 +2,7 @@
 Athlete data router: Garmin activities and Withings measurements, read-only.
 
 The data comes from the health-sync database (``HEALTH_DATABASE_URL``), read
-with a read-only account; no route writes to it. Kishin Trails has a single
-user, so every authenticated account reads the same data.
+with a read-only account; no route writes to it.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.engine import Connection
 
 from kishin_trails import health
-from kishin_trails.dependencies import getCurrentUser
+from kishin_trails.dependencies import requireLogin
 from kishin_trails.schemas import (
     ActivityDetailOut,
     ActivitySummaryOut,
@@ -29,7 +28,7 @@ from kishin_trails.schemas import (
 )
 from kishin_trails.willpower import FAT_ALPHA, MUSCLE_ALPHA
 
-router = APIRouter(prefix="/athlete", tags=["athlete"], dependencies=[Depends(getCurrentUser)])
+router = APIRouter(prefix="/athlete", tags=["athlete"], dependencies=[Depends(requireLogin)])
 
 #: Days covered by the daily and measures routes when no range is given.
 DEFAULT_RANGE_DAYS = 365

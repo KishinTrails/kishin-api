@@ -24,8 +24,7 @@ from sqlalchemy.orm import Session
 from kishin_trails import health
 from kishin_trails.athlete import getHealthConnection
 from kishin_trails.database import getDb
-from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.models import User
+from kishin_trails.dependencies import requireLogin
 from kishin_trails.schemas import (
     ActivitySummaryOut,
     CompleteTrainingIn,
@@ -37,12 +36,12 @@ from kishin_trails.schemas import (
     PlanWeekOut,
     WeekRunningOut,
 )
-from kishin_trails.training import Plan, Training, TrainingCompletion, UserActivePlan
+from kishin_trails.training import ACTIVE_PLAN_ID, ActivePlan, Plan, Training, TrainingCompletion
 from kishin_trails.training_types import TICK_TYPES
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/plan", tags=["plan"], dependencies=[Depends(getCurrentUser)])
+router = APIRouter(prefix="/plan", tags=["plan"], dependencies=[Depends(requireLogin)])
 
 #: GarminDB sport of the activities that can complete a run.
 RUNNING_SPORT = "running"
@@ -63,7 +62,6 @@ def optionalHealthConnection() -> Iterator[Connection | None]:
 
 
 DbSession = Annotated[Session, Depends(getDb)]
-CurrentUser = Annotated[User, Depends(getCurrentUser)]
 OptionalHealth = Annotated[Connection | None, Depends(optionalHealthConnection)]
 
 
@@ -78,22 +76,22 @@ def trainingTargets(training: Training) -> tuple[float | None, int | None]:
     return training.total_distance_km or None, training.total_duration_sec or None
 
 
-def activePlan(session: Session, user: User) -> tuple[UserActivePlan, Plan] | None:
-    """The user's active plan, or None."""
-    active = session.get(UserActivePlan, user.id)
+def activePlan(session: Session) -> tuple[ActivePlan, Plan] | None:
+    """The active plan, or None."""
+    active = session.get(ActivePlan, ACTIVE_PLAN_ID)
     if active is None:
         return None
     return active, active.plan
 
 
-def ownedTraining(session: Session, user: User, trainingId: int) -> Training:
-    """A training of one of the user's plans.
+def getTraining(session: Session, trainingId: int) -> Training:
+    """A training of any plan.
 
     Raises:
-        HTTPException: 404 when it does not exist or belongs to another user.
+        HTTPException: 404 when it does not exist.
     """
     training = session.get(Training, trainingId)
-    if training is None or training.plan.owner_id != user.id:
+    if training is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Training not found.")
     return training
 
@@ -197,9 +195,9 @@ def _weeksOut(
     description="The active plan with its weeks, trainings, completions and the running Garmin recorded each week.",
     response_model=PlanOut,
 )
-def getPlan(session: DbSession, user: CurrentUser, conn: OptionalHealth) -> PlanOut:
+def getPlan(session: DbSession, conn: OptionalHealth) -> PlanOut:
     """Progression of the active plan."""
-    found = activePlan(session, user)
+    found = activePlan(session)
     if found is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active plan.")
     active, plan = found
@@ -237,14 +235,13 @@ def getPlan(session: DbSession, user: CurrentUser, conn: OptionalHealth) -> Plan
 def getCandidates(
     training_id: int,
     session: DbSession,
-    user: CurrentUser,
     conn: Annotated[Connection, Depends(getHealthConnection)],
 ) -> list[health.Activity]:
     """Unlinked running activities of the training's week, oldest first."""
-    training = ownedTraining(session, user, training_id)
+    training = getTraining(session, training_id)
     if training.training_type in TICK_TYPES:
         return []
-    active = session.get(UserActivePlan, user.id)
+    active = session.get(ActivePlan, ACTIVE_PLAN_ID)
     startDate = active.start_date if active is not None and active.plan_id == training.plan_id else None
     if startDate is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The training is not in the active plan.")
@@ -274,11 +271,10 @@ def completeTraining(
     training_id: int,
     body: CompleteTrainingIn,
     session: DbSession,
-    user: CurrentUser,
     conn: OptionalHealth,
 ) -> PlanTrainingOut:
     """Records the completion."""
-    training = ownedTraining(session, user, training_id)
+    training = getTraining(session, training_id)
     if training.completion is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The training is already done.")
 
@@ -320,9 +316,9 @@ def completeTraining(
     summary="Undo a completion",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def uncompleteTraining(training_id: int, session: DbSession, user: CurrentUser) -> None:
+def uncompleteTraining(training_id: int, session: DbSession) -> None:
     """Removes the completion."""
-    training = ownedTraining(session, user, training_id)
+    training = getTraining(session, training_id)
     if training.completion is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training is not done.")
     training.completion = None

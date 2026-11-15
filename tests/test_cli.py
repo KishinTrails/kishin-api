@@ -1,34 +1,24 @@
 """
-Tests for the `kishin` CLI: `kishin user …` and `kishin gpx import`.
-
-Several account tests end at the login endpoint rather than at the hasher: what
-matters about those commands is that the account they write can actually be used.
+Tests for the `kishin` CLI: `kishin password`, `kishin gpx import` and
+`kishin db drop-legacy-tables`.
 """
 
 from __future__ import annotations
 
+import stat
 from typing import Callable
 
 import pytest
-from httpx import AsyncClient
+from sqlalchemy import inspect, select, text
 from typer.testing import CliRunner
 
 from kishin_trails.cli import app
-from kishin_trails.models import User
+from kishin_trails.models import ExploredTile, Tile
+from kishin_trails.security import verifyPassword
 
 runner = CliRunner()
 
-USERNAME = "alice"
 PASSWORD = "a-good-password"
-
-
-@pytest.fixture
-def invokeUser(db_session) -> Callable[..., object]:
-    """Runs `kishin user …` against the test database (see tests/conftest.py)."""
-    def run(*args: str, **kwargs):
-        return runner.invoke(app, ["user", *args], **kwargs)
-
-    return run
 
 
 @pytest.fixture
@@ -60,157 +50,96 @@ def gpxFile(tmp_path) -> str:
     return str(path)
 
 
-# --- user create -------------------------------------------------------------
+# --- password --------------------------------------------------------------------
 
 
-def test_create_succeeds_and_the_account_can_log_in(invokeUser, client: AsyncClient):
-    result = invokeUser("create", USERNAME, "--password", PASSWORD)
+def test_password_writes_a_hash_readable_by_its_owner_only(tmp_path):
+    hashFile = tmp_path / "KISHIN_PASSWORD_HASH"
+    result = runner.invoke(app, ["password", str(hashFile)], input=f"{PASSWORD}\n{PASSWORD}\n")
     assert result.exit_code == 0, result.output
+    assert verifyPassword(PASSWORD, hashFile.read_text())
+    assert stat.S_IMODE(hashFile.stat().st_mode) == 0o600
+    assert PASSWORD not in result.output.replace(PASSWORD + "\n", "")
 
 
-async def _login(client: AsyncClient, username: str, password: str):
-    return await client.post("/auth/login", data={"username": username, "password": password})
-
-
-@pytest.mark.asyncio
-async def test_created_account_can_log_in(invokeUser, client: AsyncClient):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    response = await _login(client, USERNAME, PASSWORD)
-    assert response.status_code == 200
-    assert "access_token" in response.json()
-
-
-def test_create_without_password_prints_one_that_works(invokeUser, db_session):
-    result = invokeUser("create", USERNAME)
+def test_password_tightens_the_mode_of_an_existing_file(tmp_path):
+    hashFile = tmp_path / "KISHIN_PASSWORD_HASH"
+    hashFile.write_text("old")
+    hashFile.chmod(0o644)
+    result = runner.invoke(app, ["password", str(hashFile)], input=f"{PASSWORD}\n{PASSWORD}\n")
     assert result.exit_code == 0, result.output
-    assert "Generated password:" in result.output
+    assert stat.S_IMODE(hashFile.stat().st_mode) == 0o600
 
 
-def test_create_duplicate_username_fails_and_changes_nothing(invokeUser, db_session):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    countBefore = db_session.query(User).count()
-
-    result = invokeUser("create", USERNAME, "--password", "something-else")
-
+def test_password_too_short_writes_nothing(tmp_path):
+    hashFile = tmp_path / "KISHIN_PASSWORD_HASH"
+    result = runner.invoke(app, ["password", str(hashFile)], input="abc\nabc\n")
     assert result.exit_code == 1
-    assert db_session.query(User).count() == countBefore
+    assert not hashFile.exists()
 
 
-# --- user list -----------------------------------------------------------------
-
-
-def test_list_is_empty_message_on_no_accounts(invokeUser):
-    result = invokeUser("list")
-    assert result.exit_code == 0, result.output
-    assert "No accounts" in result.stderr
-
-
-def test_list_keeps_the_header_off_stdout(invokeUser):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    result = invokeUser("list")
-    assert "USERNAME" not in result.stdout
-    assert USERNAME in result.stdout
-
-
-# --- user show -----------------------------------------------------------------
-
-
-def test_show_unknown_username_fails(invokeUser):
-    result = invokeUser("show", "nobody")
-    assert result.exit_code == 1
-
-
-def test_show_prints_the_account(invokeUser):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    result = invokeUser("show", USERNAME)
-    assert result.exit_code == 0, result.output
-    assert "explored: 0" in result.output
-
-
-# --- user reset-password ---------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_reset_password_invalidates_the_old_password(invokeUser, client: AsyncClient):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    newPassword = "a-different-password"
-
-    result = invokeUser("reset-password", USERNAME, "--password", newPassword)
-    assert result.exit_code == 0, result.output
-
-    oldLogin = await _login(client, USERNAME, PASSWORD)
-    assert oldLogin.status_code == 401
-
-    newLogin = await _login(client, USERNAME, newPassword)
-    assert newLogin.status_code == 200
-
-
-def test_reset_password_prints_the_token_lifetime_warning(invokeUser):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    result = invokeUser("reset-password", USERNAME, "--password", "yet-another-password")
-    assert "WARNING" in result.output
-    assert "no session table" in result.output
-
-
-def test_reset_password_unknown_username_fails(invokeUser):
-    result = invokeUser("reset-password", "nobody", "--password", PASSWORD)
-    assert result.exit_code == 1
-
-
-# --- user rename -----------------------------------------------------------------
-
-
-def test_rename_succeeds(invokeUser, db_session):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    result = invokeUser("rename", USERNAME, "alicia")
-    assert result.exit_code == 0, result.output
-    assert db_session.query(User).filter(User.username == "alicia").first() is not None
-
-
-def test_rename_onto_a_taken_username_fails(invokeUser):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    invokeUser("create", "bob", "--password", PASSWORD)
-    result = invokeUser("rename", USERNAME, "bob")
-    assert result.exit_code == 1
-
-
-# --- user delete -----------------------------------------------------------------
-
-
-def test_delete_with_yes_removes_the_user(invokeUser, db_session):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    result = invokeUser("delete", USERNAME, "--yes")
-    assert result.exit_code == 0, result.output
-    assert db_session.query(User).filter(User.username == USERNAME).first() is None
-
-
-def test_delete_without_yes_and_without_a_tty_aborts(invokeUser, db_session):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    result = invokeUser("delete", USERNAME, input="n\n")
-    assert result.exit_code == 1
-    assert db_session.query(User).filter(User.username == USERNAME).first() is not None
-
-
-def test_delete_unknown_username_fails(invokeUser):
-    result = invokeUser("delete", "nobody", "--yes")
+def test_password_in_a_missing_directory_fails(tmp_path):
+    result = runner.invoke(app, ["password", str(tmp_path / "missing" / "hash")])
     assert result.exit_code == 1
 
 
 # --- gpx import ------------------------------------------------------------------
 
 
-def test_gpx_import_dry_run_writes_nothing(invokeUser, invokeGpx, db_session, gpxFile):
-    invokeUser("create", USERNAME, "--password", PASSWORD)
-    user = db_session.query(User).filter(User.username == USERNAME).first()
-    assert len(user.explored_tiles) == 0
+def test_gpx_import_marks_the_track_explored(invokeGpx, db_session, gpxFile):
+    result = invokeGpx("import", gpxFile)
+    assert result.exit_code == 0, result.output
+    explored = set(db_session.scalars(select(ExploredTile.s2_cell_id)))
+    assert explored
+    assert explored == set(db_session.scalars(select(Tile.s2_cell_id)))
 
-    result = invokeGpx("import", gpxFile, "--user", USERNAME, "--dry-run")
+    again = invokeGpx("import", gpxFile)
+    assert again.exit_code == 0, again.output
+    assert set(db_session.scalars(select(ExploredTile.s2_cell_id))) == explored
+
+
+def test_gpx_import_dry_run_writes_nothing(invokeGpx, db_session, gpxFile):
+    result = invokeGpx("import", gpxFile, "--dry-run")
+    assert result.exit_code == 0, result.output
+    assert db_session.scalars(select(ExploredTile)).all() == []
+
+
+# --- db drop-legacy-tables ---------------------------------------------------------
+
+
+def _createLegacyTables(db_session) -> None:
+    """The multi-account tables, as an older version created them, with one row each."""
+    db_session.execute(text("DROP TABLE plans"))
+    for statement in (
+        "CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR, hashed_password VARCHAR)",
+        "CREATE TABLE user_explored_tiles (user_id INTEGER, tile_s2_cell_id VARCHAR)",
+        "CREATE TABLE user_active_plans (user_id INTEGER PRIMARY KEY, plan_id INTEGER, start_date DATE)",
+        "CREATE TABLE plans (id INTEGER PRIMARY KEY, name VARCHAR, goal_type VARCHAR, owner_id INTEGER, "
+        "target_fat_ratio FLOAT, target_muscle_mass_kg FLOAT)",
+        "INSERT INTO users VALUES (1, 'foo', 'hash')",
+        "INSERT INTO user_explored_tiles VALUES (1, '89c25a221')",
+    ):
+        db_session.execute(text(statement))
+    db_session.commit()
+
+
+def test_drop_legacy_tables_keeps_tiles(db_session):
+    db_session.add(Tile(s2_cell_id="89c25a221", tile_type="peak"))
+    db_session.commit()
+    _createLegacyTables(db_session)
+
+    result = runner.invoke(app, ["db", "drop-legacy-tables", "--yes"])
     assert result.exit_code == 0, result.output
 
-    db_session.refresh(user)
-    assert len(user.explored_tiles) == 0
+    inspector = inspect(db_session.get_bind())
+    tables = set(inspector.get_table_names())
+    assert not {"users", "user_explored_tiles", "user_active_plans"} & tables
+    assert "owner_id" not in {column["name"] for column in inspector.get_columns("plans")}
+    assert "active_plan" in tables
+    assert db_session.scalars(select(Tile.s2_cell_id)).all() == ["89c25a221"]
 
 
-def test_gpx_import_unknown_username_fails(invokeGpx, gpxFile):
-    result = invokeGpx("import", gpxFile, "--user", "nobody")
-    assert result.exit_code == 1
+def test_drop_legacy_tables_keeps_current_plan_tables(db_session):
+    result = runner.invoke(app, ["db", "drop-legacy-tables", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "No legacy tables." in result.output

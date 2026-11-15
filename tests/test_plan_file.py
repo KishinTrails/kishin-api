@@ -13,7 +13,7 @@ from plandata import examplePlan
 
 
 def test_build_plan():
-    plan = buildPlan(examplePlan(), ownerId=1)
+    plan = buildPlan(examplePlan())
     assert plan.name == "Example Plan"
     assert plan.target_fat_ratio == 20.0
     assert [(week.week_number, week.phase) for week in plan.weeks] == [(1, WeekPhase.BASE), (2, WeekPhase.RECOVERY)]
@@ -30,19 +30,19 @@ def test_build_plan():
 def test_read_plan_file(tmp_path):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps(examplePlan()))
-    assert readPlanFile(path, ownerId=1).name == "Example Plan"
+    assert readPlanFile(path).name == "Example Plan"
 
 
 def test_not_json(tmp_path):
     path = tmp_path / "plan.json"
     path.write_text("{")
     with pytest.raises(PlanFileError, match="is not JSON"):
-        readPlanFile(path, ownerId=1)
+        readPlanFile(path)
 
 
 def test_missing_file(tmp_path):
     with pytest.raises(PlanFileError, match="cannot read"):
-        readPlanFile(tmp_path / "missing.json", ownerId=1)
+        readPlanFile(tmp_path / "missing.json")
 
 
 @pytest.mark.parametrize(
@@ -64,7 +64,7 @@ def test_format_errors(change, message):
     data = examplePlan()
     change(data)
     with pytest.raises(PlanFileError) as error:
-        buildPlan(data, ownerId=1)
+        buildPlan(data)
     assert any(message in problem for problem in error.value.problems), error.value.problems
 
 
@@ -73,7 +73,7 @@ def test_plan_rules():
     data["weeks"][1]["trainings"].pop()
     data["weeks"][0]["trainings"][2]["segments"] = [{"type": "EASY", "duration_min": 20}]
     with pytest.raises(PlanFileError) as error:
-        buildPlan(data, ownerId=1)
+        buildPlan(data)
     assert error.value.problems == [
         "week 1 position 3 (CROSS_TRAINING): a tick item has segments",
         "week 2: 2 YOGA, expected 3",

@@ -17,3 +17,6 @@ __pycache__/
 cache
 
 *.gpx
+
+# Local secret files (one per setting), read like /run/secrets
+dev-secrets/

@@ -1,25 +1,19 @@
 """Administration from a shell.
 
-Accounts, because the API no longer serves registration — this group is the only way
-to create an account:
+The password of the only account (its username is the setting KISHIN_USERNAME):
 
-    kishin user list
-    kishin user create alice
-    kishin user create alice --password '...'
-    kishin user show alice --tiles
-    kishin user reset-password alice
-    kishin user rename alice alicia
-    kishin user delete alice --yes
+    kishin password dev-secrets/KISHIN_PASSWORD_HASH
 
 The database:
 
     kishin db init
     kishin db stats
     kishin db checkpoint
+    kishin db drop-legacy-tables --yes
 
 Importing a recorded trail:
 
-    kishin gpx import activity.gpx --user alice
+    kishin gpx import activity.gpx
 
 The POI cache:
 
@@ -39,7 +33,7 @@ The Perlin noise fog-of-war gate:
 
 Training plans, imported from a local JSON file:
 
-    kishin plan import plan.json --user alice --start 2026-11-16
+    kishin plan import plan.json --start 2026-11-16
     kishin plan show
 
 Reading the health-sync measurement database (read-only):
@@ -62,11 +56,11 @@ import typer
 
 from kishin_trails.config import settings
 
-from . import cache, db, geo, gpx, health, noise, plan, user
+from . import cache, db, geo, gpx, health, noise, password, plan
 from .common import fail
 
 app = typer.Typer(help="Kishin Trails administration.", no_args_is_help=True)
-app.add_typer(user.app, name="user")
+app.command("password")(password.setPassword)
 app.add_typer(db.app, name="db")
 app.add_typer(gpx.app, name="gpx")
 app.add_typer(cache.app, name="cache")
@@ -85,8 +79,10 @@ def run(
     """Serve the API."""
     if settings.SECRET_KEY == "CHANGE_ME":
         fail("SECRET_KEY is still the default CHANGE_ME; set a real secret before serving.")
+    if not settings.KISHIN_USERNAME or not settings.KISHIN_PASSWORD_HASH:
+        fail("Set KISHIN_USERNAME and KISHIN_PASSWORD_HASH (see `kishin password`) before serving.")
 
-    # Imported here so the account commands do not pay for uvicorn's import.
+    # Imported here so the other commands do not pay for uvicorn's import.
     import uvicorn  # pylint: disable=import-outside-toplevel
 
     uvicorn.run("kishin_trails.main:app", host=host, port=port, reload=reload)

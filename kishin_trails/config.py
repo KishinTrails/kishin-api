@@ -2,9 +2,13 @@
 Configuration management for the Kishin API using Pydantic Settings.
 """
 
+from pathlib import Path
 from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Directories whose files override settings: one file per setting, named after it.
+SECRETS_DIRS = ("/run/secrets", "dev-secrets")
 
 
 class Settings(BaseSettings):
@@ -16,6 +20,8 @@ class Settings(BaseSettings):
         SECRET_KEY: Secret key for JWT token signing. In production, this MUST be a secure 32-byte secret.
         ALGORITHM: Algorithm used for JWT token encoding (default: HS256).
         ACCESS_TOKEN_EXPIRE_MINUTES: Token expiration time in minutes.
+        KISHIN_USERNAME: Username of the application's only account.
+        KISHIN_PASSWORD_HASH: Argon2 hash of that account's password, written by ``kishin password``.
         CORS_ORIGINS: Comma-separated list of allowed origins.
         OVERPASS_URL: Base URL for the Overpass API endpoint.
         DEFAULT_CENTER_LAT: Default latitude for Overpass queries.
@@ -33,6 +39,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "CHANGE_ME"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+
+    # The only account. The username is an environment variable; the password
+    # hash comes from /run/secrets/KISHIN_PASSWORD_HASH on a server, or from
+    # dev-secrets/KISHIN_PASSWORD_HASH locally (see secrets_dir below). Login is
+    # refused while either is empty.
+    KISHIN_USERNAME: str = ""
+    KISHIN_PASSWORD_HASH: str = ""
+
     CORS_ORIGINS: list[str] = ["http://localhost", "http://localhost:5173"]
 
     # Overpass API
@@ -66,9 +80,13 @@ class Settings(BaseSettings):
     # field) come from a mounted file instead — e.g. a Docker secret at
     # /run/secrets/SECRET_KEY — without it ever passing through `docker
     # inspect`'s Env list the way a plain environment variable does. A
-    # missing secrets_dir (the normal case outside a container) only
-    # produces a warning, so this is a no-op for local/.env development.
-    model_config = SettingsConfigDict(env_file=".env", secrets_dir="/run/secrets")
+    # missing directory produces a warning, so only the directories that exist
+    # are listed. dev-secrets/ (git-ignored) holds the same files for a local
+    # run.
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        secrets_dir=tuple(path for path in SECRETS_DIRS if Path(path).is_dir()) or None,
+    )
 
 
 settings = Settings()

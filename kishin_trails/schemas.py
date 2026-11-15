@@ -10,28 +10,6 @@ from typing import List, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class UserBase(BaseModel):
-    """Base user schema sharing common attributes.
-
-    Attributes:
-        username: The user's unique username.
-    """
-
-    username: str
-
-
-class User(UserBase):
-    """Schema for returning user data.
-
-    Attributes:
-        id: Unique user identifier.
-        username: The user's username.
-    """
-
-    id: int
-    model_config = ConfigDict(from_attributes=True)
-
-
 class Token(BaseModel):
     """Schema for the JWT access token response.
 
@@ -42,16 +20,6 @@ class Token(BaseModel):
 
     access_token: str
     token_type: str
-
-
-class TokenData(BaseModel):
-    """Schema for the data payload encoded within the JWT.
-
-    Attributes:
-        username: The username from the token subject.
-    """
-
-    username: str | None = None
 
 
 class POIBase(BaseModel):

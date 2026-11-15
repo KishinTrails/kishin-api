@@ -7,7 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -20,8 +20,6 @@ from kishin_trails.noise import router as noise_router
 from kishin_trails.athlete import router as athlete_router
 from kishin_trails.plan import router as plan_router
 from kishin_trails.cache import initDb as initCacheDb
-from kishin_trails.dependencies import getCurrentUser
-from kishin_trails.models import User
 from kishin_trails.config import settings
 
 logger = logging.getLogger(__name__)
@@ -114,29 +112,6 @@ def readRoot():
     """
     return {
         "message": "Welcome to Kishin Trails' API. Go to /docs for the API documentation."
-    }
-
-
-@app.get("/me", summary="Get current user info")
-def readUsersMe(currentUser: User = Depends(getCurrentUser)):
-    """
-    Retrieve the authenticated user's profile information.
-
-    This is a protected endpoint that requires a valid JWT token. It returns
-    basic user information for the currently authenticated user.
-
-    Args:
-        currentUser: The authenticated user extracted from JWT token.
-
-    Returns:
-        Dictionary containing username and user ID.
-
-    Raises:
-        HTTPException 401: If authentication fails or token is invalid.
-    """
-    return {
-        "username": currentUser.username,
-        "id": currentUser.id
     }
 
 

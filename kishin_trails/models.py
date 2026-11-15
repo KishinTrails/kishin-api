@@ -1,33 +1,15 @@
 """
 SQLAlchemy models for the Kishin API using S2 cells.
 
-Defines the database schema for users, tiles (S2 cells), and Points of Interest.
+Defines the database schema for tiles (S2 cells), Points of Interest and the
+explored tiles. The application has one account, configured in the settings
+(see ``config.py``), so no table holds users.
 """
 
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Table, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kishin_trails.database import Base
-
-
-class User(Base):
-    """User model for authentication and profile data.
-
-    Attributes:
-        id: Primary key for the user.
-        username: Unique username for login.
-        hashed_password: Bcrypt-hashed password.
-    """
-
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
-
-    explored_tiles: Mapped[list["Tile"]] = relationship(
-        "Tile", secondary="user_explored_tiles", back_populates="explored_by"
-    )
 
 
 class Tile(Base):
@@ -52,8 +34,8 @@ class Tile(Base):
         secondary="tile_post_processing_pois",
         back_populates="tiles"
     )
-    explored_by: Mapped[list["User"]] = relationship(
-        "User", secondary="user_explored_tiles", back_populates="explored_tiles"
+    explored: Mapped["ExploredTile | None"] = relationship(
+        "ExploredTile", back_populates="tile", cascade="all, delete-orphan", uselist=False
     )
 
 
@@ -101,18 +83,18 @@ tile_post_processing_pois = Table(
            primary_key=True)
 )
 
-user_explored_tiles = Table(
-    "user_explored_tiles",
-    Base.metadata,
-    Column("user_id",
-           Integer,
-           ForeignKey("users.id"),
-           primary_key=True),
-    Column("tile_s2_cell_id",
-           String,
-           ForeignKey("tiles.s2_cell_id"),
-           primary_key=True)
-)
+class ExploredTile(Base):
+    """A tile the player has explored.
+
+    Attributes:
+        s2_cell_id: The tile's S2 cell token.
+    """
+
+    __tablename__ = "explored_tiles"
+
+    s2_cell_id: Mapped[str] = mapped_column(String, ForeignKey("tiles.s2_cell_id"), primary_key=True)
+
+    tile: Mapped[Tile] = relationship("Tile", back_populates="explored")
 
 
 class PostProcessingPoI(Base):
