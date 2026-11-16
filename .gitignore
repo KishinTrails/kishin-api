@@ -20,3 +20,6 @@ cache
 
 # Local secret files (one per setting), read like /run/secrets
 dev-secrets/
+
+# Perlin search configs (kishin noise search --config) list real S2 cells
+perlin_config*.json

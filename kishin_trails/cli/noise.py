@@ -3,7 +3,7 @@
 
     kishin noise cell 89c25a221
     kishin noise cell 89c25a221 --scale 100 --octaves 4
-    kishin noise search --config scripts/perlin_config_s2.json
+    kishin noise search --config perlin_config.json   # git-ignored: it lists real S2 cells
     kishin noise clear-cache --yes
 """
 

@@ -28,7 +28,7 @@ S2/H3/Overpass debugging:
 The Perlin noise fog-of-war gate:
 
     kishin noise cell 89c25a221
-    kishin noise search --config scripts/perlin_config_s2.json
+    kishin noise search --config perlin_config.json
 
 Training plans, imported from a local JSON file:
 
