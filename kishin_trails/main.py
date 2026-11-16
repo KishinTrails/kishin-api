@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Kishin Trails API",
     description="",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.EXPOSE_DOCS else None,
     redoc_url="/redoc" if settings.EXPOSE_DOCS else None,
