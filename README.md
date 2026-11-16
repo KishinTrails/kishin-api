@@ -16,7 +16,9 @@
 
 ---
 
-Backend API service for the Kishin Trails project, providing OSM data integration, login for its single account, and geo-spatial operations with S2 cell fog-of-war mechanics.
+Backend API service for the Kishin Trails project: OSM data integration, S2 cell fog-of-war
+mechanics, the athlete's Garmin and Withings data, training plans, and login for its single
+account.
 
 ## Features
 
@@ -24,7 +26,26 @@ Backend API service for the Kishin Trails project, providing OSM data integratio
 - **POI Discovery** - Points of interest from OpenStreetMap (peaks, natural areas, industrial zones)
 - **S2 Geospatial Indexing** - Google's S2 geometry library for location-based queries
 - **Exploration Tracking** - Track the explored S2 cells for fog-of-war mechanics
-- **`kishin` CLI** - The account's password, database maintenance, GPX import, cache population, and geo/noise debugging
+- **Athlete data** - Garmin activities (with GPS track and records) and Withings body
+  measurements, read-only from the database health-sync fills
+- **Training plans** - A plan imported from a JSON file, its weekly progression, and the
+  completion of each training against a Garmin run
+- **`kishin` CLI** - The account's password, database maintenance, GPX import, cache population,
+  training plans, health data queries, geo/noise debugging, and the server itself
+
+## API routes
+
+| Prefix | What it serves |
+|--------|----------------|
+| `/auth` | `POST /auth/login`, throttled per client address |
+| `/poi` | POIs of one or several S2 cells; every tile with an active POI type, for the app's cache |
+| `/trails` | The explored S2 cells: list, and record a new one |
+| `/noise` | Perlin noise values of a set of S2 cells |
+| `/athlete` | Activities, daily totals, one activity with its track and records, body measurements |
+| `/plan` | The active plan's progression; candidate runs and completion of a training |
+
+Every route except `/auth/login` needs `Authorization: Bearer <token>`. `/athlete` answers 503
+and `/plan` leaves out the Garmin figures while `HEALTH_DATABASE_URL` is not set.
 
 ## Prerequisites
 
@@ -58,6 +79,16 @@ Create a `.env` file in the project root.
   `/run/secrets/KISHIN_PASSWORD_HASH`, or `dev-secrets/KISHIN_PASSWORD_HASH` for a local run
   (git-ignored); `kishin password` writes it
 
+**Optional settings** (defaults in `kishin_trails/config.py`):
+- `HEALTH_DATABASE_URL` - health-sync's PostgreSQL database, read by `/athlete`, `/plan` and
+  `kishin health`; read from `/run/secrets/HEALTH_DATABASE_URL` or
+  `dev-secrets/HEALTH_DATABASE_URL`, like `DATABASE_URL`. `HEALTH_DB_PREFIX` is health-sync's
+  schema name prefix
+- `TIMEZONE` - IANA time zone deciding the calendar day of a Withings reading (default `UTC`)
+- `CORS_ORIGINS`, `ACCESS_TOKEN_EXPIRE_MINUTES` (default 1440), `OVERPASS_URL`,
+  `DEFAULT_CENTER_LAT` / `DEFAULT_CENTER_LON` (default central Paris), and the Perlin noise
+  gate `NOISE_SCALE`, `NOISE_OCTAVES`, `NOISE_AMPLITUDE_DECAY`, `NOISE_ACTIVITY_THRESHOLD`
+
 **API documentation:** `/docs`, `/redoc` and `/openapi.json` answer while `EXPOSE_DOCS` is true
 (the default). The Dockerfile sets it to false, so the image does not serve them.
 
@@ -70,10 +101,12 @@ old; a successful login clears its count. Behind a reverse proxy, set the enviro
 ### Run Development Server
 
 ```bash
-poetry run python -m kishin_trails.main
+poetry run kishin run            # or: poetry run python -m kishin_trails.main
+poetry run kishin run --reload   # restart when a source file changes
 ```
 
-The API will be available at `http://localhost:8000`.
+The API will be available at `http://localhost:8000`. Both commands refuse to start while a
+required setting is missing, and name the missing ones.
 
 ### API Documentation
 
@@ -124,6 +157,29 @@ DB_EXEC='docker compose -f ../health-sync/compose.dev.yaml exec -T db psql -U po
 ```
 
 The server creates its tables at startup.
+
+### `kishin plan` - Training Plans
+
+```bash
+poetry run kishin plan import plan.json --start 2026-11-16   # becomes the active plan
+poetry run kishin plan list                                  # * marks the active plan
+poetry run kishin plan show
+poetry run kishin plan delete <plan_id>
+```
+
+The plan file holds personal goals; keep it out of the repository.
+
+### `kishin health` - Read the health-sync Database
+
+Read-only queries on the database named by `HEALTH_DATABASE_URL`:
+
+```bash
+poetry run kishin health activities --days 30
+poetry run kishin health cells <activity_id>     # S2 cells crossed by its GPS track
+poetry run kishin health measures                # fat ratio and muscle mass per day
+poetry run kishin health multiplier --start 2026-11-16          # Willpower cap multiplier per day
+poetry run kishin health willpower <activity_id> --type long --target-km 12
+```
 
 ### `kishin gpx import` - Import GPX Tracks
 

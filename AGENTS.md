@@ -1,13 +1,15 @@
 # Kishin API - Developer Guide for Agents
 
 ## Project Overview
-FastAPI server for the Kishin project, handling OSM data via Overpass API, login for its single account, and geo-spatial operations.
+FastAPI server for the Kishin project: OSM data via the Overpass API, S2 fog-of-war cells, read-only
+Garmin and Withings data from health-sync's database (`/athlete`), training plans (`/plan`), and
+login for its single account. README.md lists the routes, settings and `kishin` commands.
 
 ## Build & Test Commands
 
 **Running tests (single test):**
 ```bash
-poetry run pytest test/test_overpass.py::test_defaults_are_reasonable -v
+poetry run pytest tests/test_overpass.py::test_defaults_are_reasonable -v
 ```
 
 **Run all tests:**
@@ -33,7 +35,11 @@ poetry run python -m kishin_trails.main
 **Install dependencies (Poetry):**
 ```bash
 poetry install
-poetry shell
+```
+
+**Lint:**
+```bash
+poetry run pylint --rcfile=.github/workflows/pylintrc --fail-under=9.5 kishin_trails scripts   # as in CI
 ```
 
 ## Code Style Guidelines
@@ -68,12 +74,13 @@ poetry shell
 ### Database
 - Use SQLAlchemy ORM with declarative Base
 - All models inherit from `Base`
-- Use dependency injection for database sessions (`get_db`)
-- Create models in lifespan event handler
+- Use dependency injection for database sessions (`Depends(getDb)`; health data:
+  `getHealthConnection`, read-only)
+- Tables are created by `initDb()`, called from the `lifespan` handler and `kishin db init`
 - Never commit models directly; use Session
 
 ### API Design
-- Use FastAPI routers with clear prefixes (`/auth`, `/elements`)
+- Use FastAPI routers with clear prefixes (`/auth`, `/poi`, `/trails`, `/noise`, `/athlete`, `/plan`)
 - Include summary and description for all endpoints
 - Use Pydantic schemas for request/response validation
 - Implement proper authentication with JWT tokens
@@ -120,11 +127,12 @@ poetry shell
 
 ### Dependencies
 - FastAPI for web framework
-- SQLAlchemy for database ORM
+- SQLAlchemy for database ORM, psycopg for PostgreSQL
 - Pydantic for validation
 - Shapely/geopandas for geometry handling
-- JWT/pwdlib for authentication
+- PyJWT and pwdlib (Argon2) for authentication
 - Requests for HTTP client
+- Typer for the `kishin` CLI
 
 ### Agent Instructions
 - ONLY do exactly what is asked. Do not add features, refactor, or improve code beyond the explicit request.
