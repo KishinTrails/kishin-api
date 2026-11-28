@@ -105,6 +105,20 @@ class TestAddExploredTiles:
 
         assert _explored(db_session) == set()
 
+    def test_addExploredTiles_logs_counts_and_skipped_cells(self, db_session, caplog):
+        """The log line gives each count and names every skipped cell with its reason."""
+        db_session.add_all([Tile(s2_cell_id="89c25a221", tile_type="peak"),
+                            Tile(s2_cell_id="89c25a225", tile_type="peak")])
+        db_session.commit()
+        addExploredTiles(AddExploredTilesRequest(cells=["89c25a225"]), db_session)
+
+        caplog.set_level("INFO", logger="trails")
+        addExploredTiles(AddExploredTilesRequest(cells=["89c25a221", "89c25a225", "89c25a223"]), db_session)
+
+        assert caplog.messages[-1] == (
+            "POST /api/trails/explored: 3 received, 1 added, 1 already explored, 1 skipped 89c25a223:not_found"
+        )
+
     def test_addExploredTiles_ignores_duplicates(self, db_session):
         """Test already explored tiles are silently ignored."""
 

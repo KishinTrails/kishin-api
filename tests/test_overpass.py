@@ -154,7 +154,7 @@ def test_runOverpass_makes_request_and_caches_result(tmp_path: Path, monkeypatch
         data={
             "data": query
         },
-        headers={"User-Agent": f"KishinTrailsAPI/0.4.0 ({settings.OVERPASS_CONTACT})"},
+        headers={"User-Agent": f"KishinTrailsAPI/0.4.1 ({settings.OVERPASS_CONTACT})"},
         timeout=90,
     )
 

@@ -25,6 +25,11 @@ from kishin_trails.config import servingProblems, settings
 
 logger = logging.getLogger(__name__)
 
+# uvicorn sets up only its own loggers; without a handler on the root logger, the app's INFO
+# messages (such as what POST /api/trails/explored stored or skipped) are dropped. A no-op
+# when the root logger already has a handler.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -50,7 +55,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Kishin Trails API",
     description="",
-    version="0.4.0",
+    version="0.4.1",
     lifespan=lifespan,
     docs_url="/docs" if settings.EXPOSE_DOCS else None,
     redoc_url="/redoc" if settings.EXPOSE_DOCS else None,

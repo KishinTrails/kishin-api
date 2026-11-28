@@ -83,6 +83,7 @@ if router:
 
         added: list[str] = []
         skipped: list[SkippedCell] = []
+        alreadyExplored = 0
 
         for cellToken in request.cells:
             cellId = s2.S2CellId.FromToken(cellToken)
@@ -100,6 +101,7 @@ if router:
                 continue
 
             if tile.explored is not None:
+                alreadyExplored += 1
                 continue
 
             tile.explored = ExploredTile()
@@ -107,10 +109,15 @@ if router:
 
         dbSession.commit()
 
+        # Each skipped cell is named with its reason: a not_found cell is ground the
+        # tiles table does not cover, which the app still draws as explored.
         logger.info(
-            "POST /trails/explored — added: %d, skipped: %d",
+            "POST /api/trails/explored: %d received, %d added, %d already explored, %d skipped%s",
+            len(request.cells),
             len(added),
+            alreadyExplored,
             len(skipped),
+            "".join(f" {cell.cell}:{cell.reason}" for cell in skipped),
         )
 
         return {
