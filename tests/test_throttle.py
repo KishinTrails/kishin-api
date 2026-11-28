@@ -91,7 +91,7 @@ def account(monkeypatch):
 async def _login(address: str, password: str) -> int:
     transport = ASGITransport(app=app, client=(address, 12345))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/auth/login", data={"username": TEST_USERNAME, "password": password})
+        response = await client.post("/api/auth/login", data={"username": TEST_USERNAME, "password": password})
     return response.status_code
 
 

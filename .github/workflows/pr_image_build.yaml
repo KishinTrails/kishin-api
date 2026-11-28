@@ -31,5 +31,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The Dockerfile builds the frontend from frontend-src/. The frontend's main branch is
+      # what the API's main is built against between releases.
+      - name: Check out the frontend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: KishinTrails/kishin-frontend
+          ref: main
+          path: frontend-src
+          persist-credentials: false
+
       - name: Build
-        run: docker build --pull --tag kishin-api:pull-request .
+        run: docker build --pull --tag kishin-trails:pull-request .

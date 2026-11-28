@@ -19,20 +19,20 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_requires_login(client: AsyncClient, health_engine):
-    response = await client.get("/athlete/activities")
+    response = await client.get("/api/athlete/activities")
     assert response.status_code == 401
 
 
 async def test_not_configured(authenticated_client: AsyncClient, monkeypatch):
     health.sharedHealthEngine.cache_clear()
     monkeypatch.setattr(settings, "HEALTH_DATABASE_URL", "")
-    response = await authenticated_client.get("/athlete/activities")
+    response = await authenticated_client.get("/api/athlete/activities")
     health.sharedHealthEngine.cache_clear()
     assert response.status_code == 503
 
 
 async def test_list_activities(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities")
+    response = await authenticated_client.get("/api/athlete/activities")
     assert response.status_code == 200
     rows = response.json()
     assert [row["activity_id"] for row in rows][:2] in (["1002", "1003"], ["1003", "1002"])
@@ -47,19 +47,19 @@ async def test_list_activities(authenticated_client: AsyncClient, health_engine)
 async def test_list_activities_filters(authenticated_client: AsyncClient, health_engine):
     start = (NOW - datetime.timedelta(days=45)).date().isoformat()
     response = await authenticated_client.get(
-        "/athlete/activities", params={"sport": "running", "start": start, "limit": 2, "offset": 1}
+        "/api/athlete/activities", params={"sport": "running", "start": start, "limit": 2, "offset": 1}
     )
     assert response.status_code == 200
     assert [row["activity_id"] for row in response.json()] == ["1001", "1004"]
 
 
 async def test_list_activities_bad_range(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities", params={"start": "2026-02-01", "end": "2026-01-01"})
+    response = await authenticated_client.get("/api/athlete/activities", params={"start": "2026-02-01", "end": "2026-01-01"})
     assert response.status_code == 400
 
 
 async def test_daily(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities/daily", params={"sport": "running"})
+    response = await authenticated_client.get("/api/athlete/activities/daily", params={"sport": "running"})
     assert response.status_code == 200
     days = {row["date"]: row for row in response.json()}
     day = (NOW - datetime.timedelta(days=2)).date().isoformat()
@@ -71,7 +71,7 @@ async def test_daily(authenticated_client: AsyncClient, health_engine):
 
 async def test_daily_groups_one_day(authenticated_client: AsyncClient, health_engine):
     day = (NOW - datetime.timedelta(days=1)).date().isoformat()
-    response = await authenticated_client.get("/athlete/activities/daily", params={"start": day, "end": day})
+    response = await authenticated_client.get("/api/athlete/activities/daily", params={"start": day, "end": day})
     assert response.status_code == 200
     assert response.json() == [
         {
@@ -81,7 +81,7 @@ async def test_daily_groups_one_day(authenticated_client: AsyncClient, health_en
 
 
 async def test_detail(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities/1001")
+    response = await authenticated_client.get("/api/athlete/activities/1001")
     assert response.status_code == 200
     detail = response.json()
     assert detail["name"] == "Example Run"
@@ -96,7 +96,7 @@ async def test_detail(authenticated_client: AsyncClient, health_engine):
 
 
 async def test_detail_without_running_details(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities/1003")
+    response = await authenticated_client.get("/api/athlete/activities/1003")
     assert response.status_code == 200
     assert response.json()["running"] is None
     assert response.json()["laps"] == []
@@ -104,12 +104,12 @@ async def test_detail_without_running_details(authenticated_client: AsyncClient,
 
 @pytest.mark.parametrize("suffix", ["", "/track", "/records"])
 async def test_unknown_activity(authenticated_client: AsyncClient, health_engine, suffix):
-    response = await authenticated_client.get(f"/athlete/activities/42{suffix}")
+    response = await authenticated_client.get(f"/api/athlete/activities/42{suffix}")
     assert response.status_code == 404
 
 
 async def test_track(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities/1001/track")
+    response = await authenticated_client.get("/api/athlete/activities/1001/track")
     assert response.status_code == 200
     track = response.json()
     assert track["type"] == "Feature"
@@ -121,14 +121,14 @@ async def test_track(authenticated_client: AsyncClient, health_engine):
 
 
 async def test_track_without_positions(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities/1003/track")
+    response = await authenticated_client.get("/api/athlete/activities/1003/track")
     assert response.status_code == 200
     assert response.json()["geometry"]["coordinates"] == []
     assert response.json()["bbox"] is None
 
 
 async def test_records(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/activities/1001/records")
+    response = await authenticated_client.get("/api/athlete/activities/1001/records")
     assert response.status_code == 200
     records = response.json()
     assert records["hr"] == [130, 131, 132, 140]
@@ -142,17 +142,17 @@ async def test_records(authenticated_client: AsyncClient, health_engine):
 async def test_statute_units(authenticated_client: AsyncClient, health_engine):
     with health_engine.begin() as conn:
         conn.execute(health.attributes.update().values(value="DisplayMeasure.statute"))
-    detail = (await authenticated_client.get("/athlete/activities/1001")).json()
+    detail = (await authenticated_client.get("/api/athlete/activities/1001")).json()
     assert detail["distance_km"] == pytest.approx(6.0 * health.KM_PER_MILE)
     assert detail["ascent_m"] == pytest.approx(40.0 * health.M_PER_FOOT)
     assert detail["running"]["avg_pace_sec_per_km"] == pytest.approx(310 / health.KM_PER_MILE)
-    records = (await authenticated_client.get("/athlete/activities/1001/records")).json()
+    records = (await authenticated_client.get("/api/athlete/activities/1001/records")).json()
     assert records["temperature_c"][0] == pytest.approx((20.0 - 32) * 5 / 9)
     assert records["speed_kmh"][0] == pytest.approx(10.8 * health.KM_PER_MILE)
 
 
 async def test_measures(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/athlete/measures")
+    response = await authenticated_client.get("/api/athlete/measures")
     assert response.status_code == 200
     days = response.json()
     assert [day["date"] for day in days] == [
@@ -170,7 +170,7 @@ async def test_measures(authenticated_client: AsyncClient, health_engine):
 
 async def test_measures_range_keeps_history_in_average(authenticated_client: AsyncClient, health_engine):
     day = (TODAY - datetime.timedelta(days=1)).isoformat()
-    response = await authenticated_client.get("/athlete/measures", params={"start": day, "end": day})
+    response = await authenticated_client.get("/api/athlete/measures", params={"start": day, "end": day})
     assert response.status_code == 200
     assert [row["date"] for row in response.json()] == [day]
     assert response.json()[0]["fat_ratio_ema"] == pytest.approx(23.4)

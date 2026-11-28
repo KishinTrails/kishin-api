@@ -525,14 +525,14 @@ class TestGetPoiByCell:
     @pytest.mark.asyncio
     async def test_bycell_returns_400_for_invalid_s2_cell(self, authenticated_client) -> None:
         """GET /poi/bycell should return 400 for invalid S2 cell."""
-        response = await authenticated_client.get("/poi/bycell?s2Cell=invalid")
+        response = await authenticated_client.get("/api/poi/bycell?s2Cell=invalid")
         assert response.status_code == 400
         assert "Invalid S2 cell" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_bycell_returns_404_for_uncached_cell(self, authenticated_client) -> None:
         """GET /poi/bycell should return 404 for valid but uncached cell."""
-        response = await authenticated_client.get("/poi/bycell?s2Cell=48760549c")
+        response = await authenticated_client.get("/api/poi/bycell?s2Cell=48760549c")
         assert response.status_code == 404
         assert "POI data not found" in response.json()["detail"]
 
@@ -547,7 +547,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get("/poi/bycell?s2Cell=48760549c")
+        response = await authenticated_client.get("/api/poi/bycell?s2Cell=48760549c")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "peak"
@@ -558,7 +558,7 @@ class TestGetPoiByCell:
     async def test_bycell_returns_404_for_cached_cell_no_poi(self, authenticated_client, cache_with_data) -> None:
         """GET /poi/bycell should return 404 for cached cell with no POI data."""
         cache_with_data("48760549c", None, [])
-        response = await authenticated_client.get("/poi/bycell?s2Cell=48760549c")
+        response = await authenticated_client.get("/api/poi/bycell?s2Cell=48760549c")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -580,7 +580,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
+        response = await authenticated_client.get(f"/api/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -602,7 +602,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
+        response = await authenticated_client.get(f"/api/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -624,7 +624,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
+        response = await authenticated_client.get(f"/api/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "peak"
@@ -649,7 +649,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
+        response = await authenticated_client.get(f"/api/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "natural"
@@ -674,7 +674,7 @@ class TestGetPoiByCell:
                             "lat": 45.0,
                             "lon": 3.0
                         }])
-        response = await authenticated_client.get(f"/poi/bycell?s2Cell={test_cell}")
+        response = await authenticated_client.get(f"/api/poi/bycell?s2Cell={test_cell}")
         assert response.status_code == 200
         data = response.json()
         assert data["type"] == "industrial"

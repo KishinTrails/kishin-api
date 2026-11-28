@@ -1,7 +1,27 @@
-# Two stages. The build stage holds the compiler, cmake and Poetry; the runtime stage gets
-# only the virtual environment and the application, so none of them is in the published image.
+# One image with the API and the built frontend. FastAPI serves both on port 8000: the API
+# under /api, the Withings page under /withings, the frontend on every other path.
+#
+# The build context is this repository with the matching kishin-frontend checkout in
+# `frontend-src/` (the release workflow puts it there; scripts/build_image.sh in the umbrella
+# repository does the same locally). Every base image is pinned by digest; Dependabot moves
+# the digests.
 
-FROM python:3.15-slim AS build
+# --- the frontend ---------------------------------------------------------
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS frontend
+WORKDIR /src
+# --ignore-scripts: no install script of any dependency runs during the build.
+COPY frontend-src/package.json frontend-src/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY frontend-src/ ./
+# The page and the API share an origin, so the API's address is a path. A variable in the
+# environment wins over a `.env` file, and .dockerignore keeps `.env` out of the context.
+# No VITE_DEFAULT_CENTER_*: the build's map centre is Paris, and the app asks the server's
+# DEFAULT_CENTER_LAT/LON from /api/config after login.
+ENV VITE_API_BASE=/api
+RUN npm run build
+
+# --- the API's dependencies ----------------------------------------------
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS build
 
 WORKDIR /app
 
@@ -26,30 +46,40 @@ COPY kishin_trails/ ./kishin_trails/
 # Install the kishin_trails package itself (omitted by --no-root above).
 RUN poetry install --only main --no-interaction --no-ansi
 
+# --- what runs --------------------------------------------------------------
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
-FROM python:3.15-slim
+LABEL org.opencontainers.image.title="Kishin Trails" \
+      org.opencontainers.image.source="https://github.com/KishinTrails/kishin-api" \
+      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 
 # Debian security fixes published after the base image was built. pip is removed: nothing
-# runs it, and it carries its own copies of urllib3, msgpack and setuptools.
+# runs it, and it carries its own copies of urllib3, msgpack and setuptools. The last step
+# removes every setuid and setgid bit, which nothing here needs.
 RUN apt-get update && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/* \
-    && pip uninstall -y pip
+    && pip uninstall -y pip \
+    && groupadd -g 1001 appuser \
+    && useradd --create-home appuser -u 1001 -g 1001 \
+    && find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} +
 
-# Run as non-root for security best practices.
-# Traefik routes to the container via its published port regardless of user.
-RUN groupadd -g 1001 appuser \
-    && useradd --create-home appuser -u 1001 -g 1001
-WORKDIR /app
-
+# Owned by root and read-only to the process: it cannot rewrite its own code or the pages.
 # The virtual environment's interpreter links to /usr/local/bin/python3.15, which both
 # stages have, and its scripts name /app/.venv/bin/python, so it works from the same path.
-COPY --from=build --chown=appuser:appuser /app/.venv ./.venv
-COPY --from=build --chown=appuser:appuser /app/kishin_trails ./kishin_trails
-RUN chown appuser:appuser /app
+WORKDIR /app
+COPY --from=build /app/.venv ./.venv
+COPY --from=build /app/kishin_trails ./kishin_trails
+COPY --from=frontend /src/dist ./frontend
+
+# /app/cache holds the Overpass responses. On a server it is a mounted volume owned by
+# uid 1001; the empty directory here belongs to that user so a run without the volume works.
+RUN mkdir /app/cache && chown appuser:appuser /app/cache
 
 # /docs, /redoc and /openapi.json need no login and list every route: off in
 # the image, on for a local run (see config.py).
-ENV EXPOSE_DOCS=false
+ENV EXPOSE_DOCS=false \
+    FRONTEND_DIR=/app/frontend \
+    PYTHONDONTWRITEBYTECODE=1
 
 USER appuser
 

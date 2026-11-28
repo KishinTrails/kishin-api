@@ -14,7 +14,7 @@ updates:
         update-types:
           - minor
           - patch
-  # The python:3.14-slim base image in the Dockerfile.
+  # The base images in the Dockerfile (node and python), pinned by digest.
   - package-ecosystem: docker
     directory: /
     schedule:

@@ -1,23 +1,41 @@
-.venv
-.git
-.github
-test
-.env
-.env.*
-*.pyc
-__pycache__
-.pytest_cache
-.coverage
-.ty
-.pylintrc
-# Personal data and local secrets: never in the build context
-dev-secrets
-cache
-*.db
-*.db-*
-*.sqlite
-*.sqlite3
-*.gpx
-*.fit
-*.tcx
-*.dump
+# An allowlist: everything is left out unless it is named below, so a file added to this
+# repository later (a key, a database, an activity file, a local override) cannot enter an
+# image by default.
+*
+
+!pyproject.toml
+!poetry.lock
+!README.md
+!LICENSE
+!kishin_trails
+
+# The frontend checkout the release workflow places here: only what `npm ci` and
+# `npm run build` read. Not android/ (the APK's project), not .env (the private map centre),
+# not a signing key.
+!frontend-src/package.json
+!frontend-src/package-lock.json
+!frontend-src/index.html
+!frontend-src/vite.config.ts
+!frontend-src/tsconfig.json
+!frontend-src/tsconfig.node.json
+!frontend-src/src
+!frontend-src/public
+
+# Inside the allowed directories.
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+**/*.jks
+**/*.keystore
+**/*.xcf
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite3
+**/*.gpx
+**/*.fit
+**/*.tcx
+**/*.dump
+**/perlin_config*.json
+frontend-src/src/**/*.spec.ts

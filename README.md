@@ -35,17 +35,23 @@ account.
 
 ## API routes
 
+Every API route is under `/api`. Every other path is a page of the web app when
+`FRONTEND_DIR` is set (see Deployment), except `/withings`.
+
 | Prefix | What it serves |
 |--------|----------------|
-| `/auth` | `POST /auth/login`, throttled per client address |
-| `/poi` | POIs of one or several S2 cells; every tile with an active POI type, for the app's cache |
-| `/trails` | The explored S2 cells: list, and record a new one |
-| `/noise` | Perlin noise values of a set of S2 cells |
-| `/athlete` | Activities, daily totals, one activity with its track and records, body measurements |
-| `/plan` | The active plan's progression; candidate runs and completion of a training |
+| `/api/auth` | `POST /api/auth/login`, throttled per client address |
+| `/api/config` | The map's default centre (`DEFAULT_CENTER_LAT` / `DEFAULT_CENTER_LON`), read by the app after login |
+| `/api/poi` | POIs of one or several S2 cells; every tile with an active POI type, for the app's cache |
+| `/api/trails` | The explored S2 cells: list, and record a new one |
+| `/api/noise` | Perlin noise values of a set of S2 cells |
+| `/api/athlete` | Activities, daily totals, one activity with its track and records, body measurements |
+| `/api/plan` | The active plan's progression; candidate runs and completion of a training |
+| `/withings` | A static page showing the code of Withings' OAuth redirect (health-sync's first sync) |
 
-Every route except `/auth/login` needs `Authorization: Bearer <token>`. `/athlete` answers 503
-and `/plan` leaves out the Garmin figures while `HEALTH_DATABASE_URL` is not set.
+Every `/api` route except `/api/` and `/api/auth/login` needs `Authorization: Bearer <token>`.
+`/api/athlete` answers 503 and `/api/plan` leaves out the Garmin figures while
+`HEALTH_DATABASE_URL` is not set.
 
 ## Prerequisites
 
@@ -105,8 +111,9 @@ poetry run kishin run            # or: poetry run python -m kishin_trails.main
 poetry run kishin run --reload   # restart when a source file changes
 ```
 
-The API will be available at `http://localhost:8000`. Both commands refuse to start while a
-required setting is missing, and name the missing ones.
+The API will be available at `http://localhost:8000/api`. Both commands refuse to start while a
+required setting is missing, and name the missing ones. To serve a frontend build from the same
+process, set `FRONTEND_DIR` to kishin-frontend's `dist/` (built with `VITE_API_BASE=/api`).
 
 ### API Documentation
 
@@ -255,16 +262,59 @@ Docker must be running. To use an existing server instead, set `TEST_DATABASE_UR
 superuser URL on it: `kishin_test` and `health_test` are then dropped and created there.
 
 **Release** (`.github/workflows/release.yaml`), only for a tag `vX.Y.Z` that matches the version
-in `pyproject.toml`:
-- Run the tests, pylint and ty
+in `pyproject.toml` and in kishin-frontend's `package.json` at the same tag. Tag the frontend
+first: the workflow checks it out at the tag.
+- Run the tests, pylint and ty; the frontend's lint, unit tests and build
 - Build the image without a layer cache and scan it with Trivy; a fixable critical or high
   vulnerability, or a secret found in the image, stops the release
-- Push `ghcr.io/kishintrails/kishin-api` as `X.Y.Z`, `X.Y` and `latest`, with a build provenance
+- Push `ghcr.io/kishintrails/kishin-trails` as `X.Y.Z`, `X.Y` and `latest`, with a build provenance
   attestation and a CycloneDX SBOM attestation. Check one before deploying it:
-  `gh attestation verify oci://ghcr.io/kishintrails/kishin-api@sha256:<digest> --owner KishinTrails`
+  `gh attestation verify oci://ghcr.io/kishintrails/kishin-trails@sha256:<digest> --owner KishinTrails`
 
-**Pull request image build** (`.github/workflows/pr_image_build.yaml`): builds the image, without
-pushing it, when a pull request changes the Dockerfile or the dependencies.
+**Pull request image build** (`.github/workflows/pr_image_build.yaml`): builds the image, with
+kishin-frontend's `main`, without pushing it, when a pull request changes the Dockerfile or the
+dependencies.
+
+## Deployment
+
+One image, `ghcr.io/kishintrails/kishin-trails`, holds the API and the built web app. One
+process answers both on port 8000: the API under `/api`, the Withings page under `/withings`,
+the web app on every other path. The web app calls `/api` on the address it was loaded from.
+The Android app calls the same server at `https://<host>/api`.
+
+**What is in the image**
+- `/app/kishin_trails` and `/app/.venv`: the API. `/app/frontend`: kishin-frontend's build,
+  made with `VITE_API_BASE=/api` and without `VITE_DEFAULT_CENTER_*`, so its own map centre is
+  central Paris; the app reads the server's centre from `/api/config` after login. These belong
+  to root and the process cannot write to them.
+- `/app/cache`, empty, for the Overpass responses: mount a volume there, writable by uid 1001.
+- No database, no `.env`, no secret. `.dockerignore` is an allowlist, so a file added to either
+  repository later is left out until it is named there.
+- The process runs as uid/gid 1001, `appuser`.
+
+**Environment the image sets**
+
+| Variable | Value | Why |
+|---|---|---|
+| `FRONTEND_DIR` | `/app/frontend` | serve the web app |
+| `EXPOSE_DOCS` | `false` | `/docs`, `/redoc` and `/openapi.json` need no login and list every route; they answer 404 |
+
+**What to provide**: the secrets as files in `/run/secrets` (`SECRET_KEY`, `KISHIN_PASSWORD_HASH`,
+`DATABASE_URL`, and `HEALTH_DATABASE_URL` for `/api/athlete`), `KISHIN_USERNAME`,
+`DEFAULT_CENTER_LAT` / `DEFAULT_CENTER_LON`, and behind a reverse proxy `FORWARDED_ALLOW_IPS`
+set to the proxy's address (see Login throttling).
+
+**Headers.** Each page answers `Cache-Control: no-cache`, except the files under `/assets/`,
+whose names change with their content (`immutable`), and `Content-Security-Policy:
+frame-ancestors 'none'`. The rest of the page's policy is the `<meta>` tag of the build
+(kishin-frontend's `vite.config.ts`). The reverse proxy adds HSTS and the other headers. A
+`Permissions-Policy` from the proxy must allow `geolocation=(self)`, or the browser refuses the
+map's position marker.
+
+**ghcr settings, once, after the first publish**: make the package public, and check in its
+settings that it is linked to `kishin-api` and that this repository's Actions have write access.
+Then check from a machine without a registry login: `docker logout ghcr.io` and
+`docker pull ghcr.io/kishintrails/kishin-trails:X.Y.Z`.
 
 ## 🔗 Useful Links
 

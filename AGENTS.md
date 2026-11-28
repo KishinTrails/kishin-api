@@ -80,7 +80,7 @@ poetry run pylint --rcfile=.github/workflows/pylintrc --fail-under=9.5 kishin_tr
 - Never commit models directly; use Session
 
 ### API Design
-- Use FastAPI routers with clear prefixes (`/auth`, `/poi`, `/trails`, `/noise`, `/athlete`, `/plan`)
+- Use FastAPI routers with clear prefixes (`/auth`, `/poi`, `/trails`, `/noise`, `/athlete`, `/plan`), included under the `/api` router in `main.py`; every other path is the web app (`frontend.py`)
 - Include summary and description for all endpoints
 - Use Pydantic schemas for request/response validation
 - Implement proper authentication with JWT tokens

@@ -22,6 +22,24 @@ class Token(BaseModel):
     token_type: str
 
 
+class MapCenterOut(BaseModel):
+    """A point in degrees (WGS84)."""
+
+    lat: float
+    lon: float
+
+
+class ClientConfigOut(BaseModel):
+    """Settings of this server that the app reads after login.
+
+    Attributes:
+        default_center: Where the map opens before the device gives a position
+            (DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON).
+    """
+
+    default_center: MapCenterOut
+
+
 class POIBase(BaseModel):
     """Base schema for Point of Interest data.
 

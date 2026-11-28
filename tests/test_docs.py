@@ -35,7 +35,7 @@ async def test_docs_answer_when_exposed(appWithDocs):
     app = appWithDocs(True)
     for path in DOC_ROUTES:
         assert (await _get(app, path)).status_code == 200, path
-    assert "/docs" in (await _get(app, "/")).json()["message"]
+    assert "/docs" in (await _get(app, "/api/")).json()["message"]
 
 
 @pytest.mark.asyncio
@@ -43,4 +43,4 @@ async def test_docs_absent_when_not_exposed(appWithDocs):
     app = appWithDocs(False)
     for path in DOC_ROUTES:
         assert (await _get(app, path)).status_code == 404, path
-    assert "/docs" not in (await _get(app, "/")).json()["message"]
+    assert "/docs" not in (await _get(app, "/api/")).json()["message"]

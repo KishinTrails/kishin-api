@@ -29,9 +29,10 @@ class Settings(BaseSettings):
         LOGIN_INTERVAL: Seconds over which login attempts are counted.
         EXPOSE_DOCS: Whether /docs, /redoc and /openapi.json answer; read when the app is created.
         CORS_ORIGINS: Comma-separated list of allowed origins.
+        FRONTEND_DIR: Directory of the built frontend to serve; None serves no page.
         OVERPASS_URL: Base URL for the Overpass API endpoint.
-        DEFAULT_CENTER_LAT: Default latitude for Overpass queries.
-        DEFAULT_CENTER_LON: Default longitude for Overpass queries.
+        DEFAULT_CENTER_LAT: Default latitude for Overpass queries, and the app's map (/api/config).
+        DEFAULT_CENTER_LON: Default longitude for Overpass queries, and the app's map (/api/config).
         DEBUG_LOCATIONS: Dictionary of debug locations (loaded from .env, not committed).
         HEALTH_DATABASE_URL: SQLAlchemy URL of the health-sync measurement database (read-only account).
         HEALTH_DB_PREFIX: Prefix of the health-sync schema names (health-sync's HEALTH_DB_PREFIX).
@@ -70,6 +71,11 @@ class Settings(BaseSettings):
     EXPOSE_DOCS: bool = True
 
     CORS_ORIGINS: list[str] = ["http://localhost", "http://localhost:5173"]
+
+    # A built frontend (kishin-frontend's dist/) to serve on every path outside /api and
+    # /withings, so one process answers the pages and the API. Unset, no page is served.
+    # The Dockerfile sets FRONTEND_DIR=/app/frontend for the image.
+    FRONTEND_DIR: Path | None = None
 
     # Overpass API
     OVERPASS_URL: str = "https://overpass-api.de/api/interpreter"

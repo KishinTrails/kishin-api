@@ -12,8 +12,8 @@ from fastapi.security import OAuth2PasswordBearer
 from kishin_trails.config import settings
 from kishin_trails.security import ALGORITHM, PASSWORD_CLAIM, passwordFingerprint
 
-# Token location is /auth/login (see auth.py)
-oauth2Scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# Token location is /api/auth/login (auth.py, under main.py's /api router)
+oauth2Scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def requireLogin(token: Annotated[str, Depends(oauth2Scheme)]) -> None:

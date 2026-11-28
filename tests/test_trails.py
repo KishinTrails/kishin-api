@@ -17,13 +17,13 @@ def _explored(db_session) -> set[str]:
 
 @pytest.mark.asyncio
 async def test_explored_requires_auth(client: AsyncClient):
-    response = await client.get("/trails/explored")
+    response = await client.get("/api/trails/explored")
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_explored_returns_empty_list_when_nothing_is_explored(authenticated_client: AsyncClient):
-    response = await authenticated_client.get("/trails/explored")
+    response = await authenticated_client.get("/api/trails/explored")
     assert response.status_code == 200
     assert response.json() == {"explored": []}
 
@@ -42,7 +42,7 @@ async def test_explored_returns_the_explored_tiles(authenticated_client: AsyncCl
         tile.explored = ExploredTile()
     db_session.commit()
 
-    response = await authenticated_client.get("/trails/explored")
+    response = await authenticated_client.get("/api/trails/explored")
     assert response.status_code == 200
     assert set(response.json()["explored"]) == {"478f74", "465704", "47c5ac", "47c3c4"}
 
@@ -51,7 +51,7 @@ async def test_explored_returns_the_explored_tiles(authenticated_client: AsyncCl
 async def test_post_explored_marks_tiles(authenticated_client: AsyncClient, db_session):
     db_session.add(Tile(s2_cell_id="89c25a221", tile_type="peak"))
     db_session.commit()
-    response = await authenticated_client.post("/trails/explored", json={"cells": ["89c25a221", "89c25a221"]})
+    response = await authenticated_client.post("/api/trails/explored", json={"cells": ["89c25a221", "89c25a221"]})
     assert response.status_code == 200
     assert response.json()["added"] == ["89c25a221"]
     assert _explored(db_session) == {"89c25a221"}

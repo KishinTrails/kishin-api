@@ -14,7 +14,7 @@ from kishin_trails.security import PASSWORD_CLAIM, createAccessToken, getPasswor
 TEST_USERNAME = "foo"
 TEST_PASSWORD = "testpassword"
 
-PROTECTED_ROUTE = "/trails/explored"
+PROTECTED_ROUTE = "/api/trails/explored"
 
 # Fixtures 'client' and 'db_session' are automatically loaded from conftest.py
 
@@ -27,7 +27,7 @@ def account(monkeypatch):
 
 
 async def _login(client: AsyncClient, username: str, password: str):
-    return await client.post("/auth/login", data={"username": username, "password": password})
+    return await client.post("/api/auth/login", data={"username": username, "password": password})
 
 
 @pytest.mark.asyncio
@@ -119,5 +119,5 @@ def test_password_fingerprint_ignores_a_trailing_newline():
 
 @pytest.mark.asyncio
 async def test_registration_is_restricted(client: AsyncClient):
-    response = await client.post("/auth/register", json={"username": "bar", "password": "somepassword"})
+    response = await client.post("/api/auth/register", json={"username": "bar", "password": "somepassword"})
     assert response.status_code == 404

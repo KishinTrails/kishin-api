@@ -43,12 +43,12 @@ def _training(plan: Plan, week: int, position: int) -> int:
 
 
 async def test_no_active_plan(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.get("/plan")
+    response = await authenticated_client.get("/api/plan")
     assert response.status_code == 404
 
 
 async def test_progression(authenticated_client: AsyncClient, health_engine, plan):
-    response = await authenticated_client.get("/plan")
+    response = await authenticated_client.get("/api/plan")
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "Example Plan"
@@ -77,14 +77,14 @@ async def test_progression_without_health(authenticated_client: AsyncClient, pla
         yield None
 
     app.dependency_overrides[optionalHealthConnection] = no_health
-    response = await authenticated_client.get("/plan")
+    response = await authenticated_client.get("/api/plan")
     assert response.status_code == 200
     assert response.json()["health_available"] is False
     assert response.json()["weeks"][0]["running"] is None
 
 
 async def test_candidates(authenticated_client: AsyncClient, health_engine, plan):
-    response = await authenticated_client.get(f"/plan/trainings/{_training(plan, 1, 1)}/candidates")
+    response = await authenticated_client.get(f"/api/plan/trainings/{_training(plan, 1, 1)}/candidates")
     assert response.status_code == 200
     ids = [activity["activity_id"] for activity in response.json()]
     assert "1002" in ids
@@ -94,14 +94,14 @@ async def test_candidates(authenticated_client: AsyncClient, health_engine, plan
 
 
 async def test_candidates_of_a_tick_item(authenticated_client: AsyncClient, health_engine, plan):
-    response = await authenticated_client.get(f"/plan/trainings/{_training(plan, 1, 3)}/candidates")
+    response = await authenticated_client.get(f"/api/plan/trainings/{_training(plan, 1, 3)}/candidates")
     assert response.json() == []
 
 
 async def test_complete_a_run(authenticated_client: AsyncClient, health_engine, plan):
     trainingId = _training(plan, 1, 1)
     response = await authenticated_client.post(
-        f"/plan/trainings/{trainingId}/complete", json={"activity_id": "1002", "rpe": 4}
+        f"/api/plan/trainings/{trainingId}/complete", json={"activity_id": "1002", "rpe": 4}
     )
     assert response.status_code == 201, response.json()
     completion = response.json()["completion"]
@@ -109,25 +109,25 @@ async def test_complete_a_run(authenticated_client: AsyncClient, health_engine, 
     assert completion["activity"]["distance_km"] == 14.0
     assert completion["activity"]["name"] == "Example Long Run"
 
-    candidates = await authenticated_client.get(f"/plan/trainings/{_training(plan, 1, 2)}/candidates")
+    candidates = await authenticated_client.get(f"/api/plan/trainings/{_training(plan, 1, 2)}/candidates")
     assert "1002" not in [activity["activity_id"] for activity in candidates.json()]
 
-    progression = (await authenticated_client.get("/plan")).json()
+    progression = (await authenticated_client.get("/api/plan")).json()
     assert progression["weeks"][0]["trainings"][0]["completion"]["rpe"] == 4
 
 
 async def test_complete_a_tick_item_and_undo(authenticated_client: AsyncClient, health_engine, plan):
     trainingId = _training(plan, 1, 5)
-    response = await authenticated_client.post(f"/plan/trainings/{trainingId}/complete", json={})
+    response = await authenticated_client.post(f"/api/plan/trainings/{trainingId}/complete", json={})
     assert response.status_code == 201
     assert response.json()["completion"]["activity"] is None
 
-    again = await authenticated_client.post(f"/plan/trainings/{trainingId}/complete", json={})
+    again = await authenticated_client.post(f"/api/plan/trainings/{trainingId}/complete", json={})
     assert again.status_code == 409
 
-    undo = await authenticated_client.delete(f"/plan/trainings/{trainingId}/complete")
+    undo = await authenticated_client.delete(f"/api/plan/trainings/{trainingId}/complete")
     assert undo.status_code == 204
-    assert (await authenticated_client.delete(f"/plan/trainings/{trainingId}/complete")).status_code == 404
+    assert (await authenticated_client.delete(f"/api/plan/trainings/{trainingId}/complete")).status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -139,14 +139,14 @@ async def test_complete_a_tick_item_and_undo(authenticated_client: AsyncClient, 
     ],
 )
 async def test_completion_refused(authenticated_client: AsyncClient, health_engine, plan, position, body, status, detail):
-    response = await authenticated_client.post(f"/plan/trainings/{_training(plan, 1, position)}/complete", json=body)
+    response = await authenticated_client.post(f"/api/plan/trainings/{_training(plan, 1, position)}/complete", json=body)
     assert response.status_code == status
     assert detail in response.json()["detail"]
 
 
 async def test_rpe_out_of_range(authenticated_client: AsyncClient, health_engine, plan):
     response = await authenticated_client.post(
-        f"/plan/trainings/{_training(plan, 1, 1)}/complete", json={"activity_id": "1002", "rpe": 11}
+        f"/api/plan/trainings/{_training(plan, 1, 1)}/complete", json={"activity_id": "1002", "rpe": 11}
     )
     assert response.status_code == 422
 
@@ -155,22 +155,22 @@ async def test_rpe_out_of_range(authenticated_client: AsyncClient, health_engine
 async def test_any_run_completes_a_run(authenticated_client: AsyncClient, health_engine, plan, position, activityId):
     """Activity 1001 is shorter than the 13 km target and 1004 shorter than the 30 min target."""
     response = await authenticated_client.post(
-        f"/plan/trainings/{_training(plan, 1, position)}/complete", json={"activity_id": activityId, "rpe": 3}
+        f"/api/plan/trainings/{_training(plan, 1, position)}/complete", json={"activity_id": activityId, "rpe": 3}
     )
     assert response.status_code == 201
 
 
 async def test_one_activity_completes_one_training(authenticated_client: AsyncClient, health_engine, plan):
     first = await authenticated_client.post(
-        f"/plan/trainings/{_training(plan, 1, 1)}/complete", json={"activity_id": "1002", "rpe": 4}
+        f"/api/plan/trainings/{_training(plan, 1, 1)}/complete", json={"activity_id": "1002", "rpe": 4}
     )
     assert first.status_code == 201
     second = await authenticated_client.post(
-        f"/plan/trainings/{_training(plan, 2, 1)}/complete", json={"activity_id": "1002", "rpe": 4}
+        f"/api/plan/trainings/{_training(plan, 2, 1)}/complete", json={"activity_id": "1002", "rpe": 4}
     )
     assert second.status_code == 409
 
 
 async def test_unknown_training(authenticated_client: AsyncClient, health_engine):
-    response = await authenticated_client.post("/plan/trainings/42/complete", json={})
+    response = await authenticated_client.post("/api/plan/trainings/42/complete", json={})
     assert response.status_code == 404
